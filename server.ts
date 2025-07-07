@@ -28,7 +28,22 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 1024 * 1024 * 5 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (
+      file.mimetype === 'image/jpeg' ||
+      file.mimetype === 'image/png' ||
+      file.mimetype === 'image/webp'
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPEG, PNG, and WEBP images are allowed!'), false);
+    }
+  },
+}).fields([{ name: 'image', maxCount: 1 }, { name: 'wide_image', maxCount: 1 }]);
+
 
 app.use(express.json());
 app.use(morgan('combined'));
@@ -139,8 +154,13 @@ const BookingSchema = z.object({
   session_id: z.number().min(1, { message: 'Session ID is required' }),
   name: z.string().min(1, { message: 'Name is required' }),
   email: z.string().email({ message: 'Invalid email address' }),
-  phone_number: z.string().min(1, { message: 'Phone number is required' }),
-  seats: z.array(z.string().min(1, { message: 'Seat is required' })),
+  phone_number: z.string().length(8, { message: 'Invalid phone number' }),
+  seats: z.array(z.string().min(1, { message: 'Seat is required' }))
+       .min(1, { message: 'At least one seat must be selected' }),
+});
+
+const BookingIdSchema = z.object({
+  bookingId: z.string().regex(/^\d+$/, { message: 'Booking ID must be a number' }).transform(Number),
 });
 
 // Helper function to handle database errors
@@ -260,7 +280,7 @@ app.get('/sessions/:id/seats', async (req: Request, res: Response) => {
   }
 });
 
-// Book seats with improved error handling
+// Book seats with improved error handling and return summary
 app.post('/book', async (req: Request, res: Response) => {
   const db = await openDb();
   let transactionActive = false;
@@ -285,21 +305,111 @@ app.post('/book', async (req: Request, res: Response) => {
 
     await db.run('COMMIT');
     transactionActive = false;
-    res.json({ success: true });
+
+    // Fetch the newly created booking details for the summary
+    const bookedDetails = await db.get(
+      'SELECT id, session_id, name, email, phone_number FROM bookings WHERE id = ?',
+      [bookingId]
+    );
+
+    const bookedSeats = await db.all(
+      'SELECT seat FROM booking_seats WHERE booking_id = ?',
+      [bookingId]
+    );
+
+    res.json({
+      success: true,
+      bookingSummary: {
+        booking_id: bookedDetails.id,
+        name: bookedDetails.name,
+        email: bookedDetails.email,
+        phone_number: bookedDetails.phone_number,
+        session_id: bookedDetails.session_id,
+        seats: bookedSeats.map((s) => s.seat),
+      },
+    });
   } catch (error) {
     if (transactionActive) {
       await db.run('ROLLBACK');
     }
-    await handleDbError(res, error, 'Failed to book seats');
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: error.issues });
+    } else {
+      await handleDbError(res, error, 'Failed to book seats');
+    }
   }
 });
+
+// New endpoint to verify a booking
+app.get('/verify-booking/:bookingId', async (req: Request, res: Response) => {
+  try {
+    const { bookingId } = BookingIdSchema.parse(req.params);
+    const db = await openDb();
+
+    const bookingDetails = await db.get(
+      'SELECT * FROM bookings WHERE id = ?',
+      [bookingId]
+    );
+
+    if (!bookingDetails) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const sessionDetails = await db.get(
+      'SELECT * FROM sessions WHERE id = ?',
+      [bookingDetails.session_id]
+    );
+
+    if (!sessionDetails) {
+      return res.status(404).json({ error: 'Session not found for this booking' });
+    }
+
+    const movieDetails = await db.get(
+      'SELECT * FROM movies WHERE id = ?',
+      [sessionDetails.movie_id]
+    );
+
+    if (!movieDetails) {
+      return res.status(404).json({ error: 'Movie not found for this session' });
+    }
+
+    const bookedSeats = await db.all(
+      'SELECT seat FROM booking_seats WHERE booking_id = ?',
+      [bookingId]
+    );
+
+    res.json({
+      status: 'valid',
+      booking: {
+        id: bookingDetails.id,
+        name: bookingDetails.name,
+        email: bookingDetails.email,
+        phone_number: bookingDetails.phone_number,
+        seats: bookedSeats.map((s) => s.seat),
+        session: sessionDetails,
+        movie: movieDetails,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: error.issues });
+    } else {
+      await handleDbError(res, error, 'Failed to verify booking');
+    }
+  }
+});
+
 
 // Admin: Add a movie with improved error handling and file path handling
 app.post(
   '/admin/movies',
-  upload.fields([{ name: 'image', maxCount: 1 }, { name: 'wide_image', maxCount: 1 }]),
+  upload,
   async (req: Request, res: Response) => {
     try {
+      if (!req.files || !req.files['image']) {
+        return res.status(400).json({ error: 'Image file is required' });
+      }
+
       const movieData = MovieSchema.parse({
         ...req.body,
         image: req.files['image'][0].path,
@@ -323,7 +433,14 @@ app.post(
       );
       res.json({ id: lastID });
     } catch (error) {
-      if (error instanceof z.ZodError) {
+      if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ error: 'File size exceeds limit (5MB)' });
+        } else if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({ error: 'Unexpected file type' });
+        }
+        return res.status(400).json({ error: `Multer Error: ${error.message}` });
+      } else if (error instanceof z.ZodError) {
         res.status(400).json({ error: 'Validation failed', details: error.issues });
       } else if (error.message === 'Image file is required') {
         res.status(400).json({ error: 'Image file is required' });
@@ -392,11 +509,11 @@ app.put('/admin/sessions/:id', async (req: Request, res: Response) => {
       await handleDbError(res, error, 'Failed to update session');
     }
   }
-});
+}
+);
 
 // Start server
 const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
-

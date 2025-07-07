@@ -16,41 +16,55 @@ const express_1 = __importDefault(require("express"));
 const sqlite3_1 = __importDefault(require("sqlite3"));
 const sqlite_1 = require("sqlite");
 const zod_1 = require("zod");
-const morgan_1 = __importDefault(require("morgan")); // For logging HTTP requests
-const cors_1 = __importDefault(require("cors")); // Import the cors package
+const morgan_1 = __importDefault(require("morgan"));
+const cors_1 = __importDefault(require("cors"));
 const multer_1 = __importDefault(require("multer"));
+// Define a custom error type for better error handling
+class ServerError extends Error {
+    constructor(message, statusCode) {
+        super(message);
+        this.statusCode = statusCode;
+        this.name = 'ServerError';
+    }
+}
 const app = (0, express_1.default)();
-// Configure multer for file uploads
+// Multer configuration for file uploads
 const storage = multer_1.default.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, './uploads'); // Save files in the 'uploads' directory
+        cb(null, './uploads');
     },
     filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`); // Unique filename
+        cb(null, `${Date.now()}-${file.originalname}`);
     },
 });
-const upload = (0, multer_1.default)({ storage });
+const upload = (0, multer_1.default)({
+    storage,
+    limits: { fileSize: 1024 * 1024 * 5 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'image/jpeg' ||
+            file.mimetype === 'image/png' ||
+            file.mimetype === 'image/webp') {
+            cb(null, true);
+        }
+        else {
+            cb(new Error('Only JPEG, PNG, and WEBP images are allowed!'), false);
+        }
+    },
+}).fields([{ name: 'image', maxCount: 1 }, { name: 'wide_image', maxCount: 1 }]);
 app.use(express_1.default.json());
-// Logging middleware (using morgan)
-app.use((0, morgan_1.default)('combined')); // Logs all HTTP requests in the console
-// allow cors
-// Enable CORS for all routes
+app.use((0, morgan_1.default)('combined'));
 app.use((0, cors_1.default)({
-    origin: 'http://localhost:5173', // Allow requests from your React app
-    credentials: true, // Allow cookies and credentials (if needed)
+    origin: 'http://localhost:5173',
+    credentials: true,
 }));
-// Custom middleware to check for specific headers
+// Custom middleware to check for specific headers (currently inactive)
 const headerCheckMiddleware = (req, res, next) => {
-    const requiredHeader = 'x-required-header'; // Replace with your required header
-    console.log('checking for header');
-    //   if (!req.headers[requiredHeader]) {
-    //     return res
-    //       .status(400)
-    //       .json({ error: `Missing required header: ${requiredHeader}` });
-    //   }
-    next(); // Proceed to the next middleware/route
+    // const requiredHeader = 'x-required-header';
+    // if (!req.headers[requiredHeader]) {
+    //   return res.status(400).json({ error: `Missing required header: ${requiredHeader}` });
+    // }
+    next();
 };
-// Apply header check middleware to all routes
 app.use(headerCheckMiddleware);
 // Open SQLite database
 function openDb() {
@@ -61,84 +75,95 @@ function openDb() {
         });
     });
 }
-// Create tables
+// Initialize database (create tables if they don't exist)
 function initializeDb() {
     return __awaiter(this, void 0, void 0, function* () {
         const db = yield openDb();
         yield db.exec(`
-        CREATE TABLE IF NOT EXISTS movies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT NOT NULL,
-            duration INTEGER NOT NULL,
-            genre TEXT,
-            actors TEXT,
-            release_date TEXT NOT NULL,
-            transfer_link TEXT,
-            image TEXT NOT NULL,
-            wide_image TEXT
-        );
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            movie_id INTEGER NOT NULL,
-            audio TEXT NOT NULL,
-            subtitle TEXT,
-            hall_no INTEGER NOT NULL,
-            date TEXT NOT NULL,
-            time TEXT NOT NULL,
-            UNIQUE(hall_no, date, time),
-            FOREIGN KEY (movie_id) REFERENCES movies(id)
-        );
-        CREATE TABLE IF NOT EXISTS bookings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL,
-            phone_number TEXT NOT NULL,
-            FOREIGN KEY (session_id) REFERENCES sessions(id)
-        );
-        CREATE TABLE IF NOT EXISTS booking_seats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            booking_id INTEGER NOT NULL,
-            session_id INTEGER NOT NULL,
-            seat TEXT NOT NULL,
-            FOREIGN KEY (booking_id) REFERENCES bookings(id),
-            FOREIGN KEY (session_id) REFERENCES sessions(id),
-            UNIQUE(session_id, seat)
-        );
-    `);
+    CREATE TABLE IF NOT EXISTS movies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      duration INTEGER NOT NULL,
+      genre TEXT,
+      actors TEXT,
+      release_date TEXT NOT NULL,
+      transfer_link TEXT,
+      image TEXT NOT NULL,
+      wide_image TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      movie_id INTEGER NOT NULL,
+      audio TEXT NOT NULL,
+      subtitle TEXT,
+      hall_no INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      time TEXT NOT NULL,
+      UNIQUE(hall_no, date, time),
+      FOREIGN KEY (movie_id) REFERENCES movies(id)
+    );
+    CREATE TABLE IF NOT EXISTS bookings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone_number TEXT NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES sessions(id)
+    );
+    CREATE TABLE IF NOT EXISTS booking_seats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      booking_id INTEGER NOT NULL,
+      session_id INTEGER NOT NULL,
+      seat TEXT NOT NULL,
+      FOREIGN KEY (booking_id) REFERENCES bookings(id),
+      FOREIGN KEY (session_id) REFERENCES sessions(id),
+      UNIQUE(session_id, seat)
+    );
+  `);
         console.log('Database initialized');
     });
 }
 initializeDb();
-// Zod schemas for validation
+// Zod schemas for input validation with improved type safety and error messages
 const MovieSchema = zod_1.z.object({
-    title: zod_1.z.string(),
-    description: zod_1.z.string(),
-    duration: zod_1.z.string(),
+    title: zod_1.z.string().min(1, { message: 'Title is required' }),
+    description: zod_1.z.string().min(1, { message: 'Description is required' }),
+    duration: zod_1.z.string().regex(/^\d+$/, { message: 'Duration must be a number' }),
     genre: zod_1.z.string().optional(),
     actors: zod_1.z.string().optional(),
-    release_date: zod_1.z.string(),
-    transfer_link: zod_1.z.string().optional(),
-    //image: this is a file
-    //wide_image: this is also a file but optional
+    release_date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Invalid date format. Use YYYY-MM-DD' }),
+    transfer_link: zod_1.z.string().url({ message: 'Invalid URL' }).optional(),
+    image: zod_1.z.string().min(1, { message: 'Image path is required' }), // Assuming you'll provide the path
+    wide_image: zod_1.z.string().optional(), // Wide image is optional
 });
 const SessionSchema = zod_1.z.object({
-    movie_id: zod_1.z.number(),
-    audio: zod_1.z.string(),
+    movie_id: zod_1.z.number().min(1, { message: 'Movie ID is required' }),
+    audio: zod_1.z.string().min(1, { message: 'Audio is required' }),
     subtitle: zod_1.z.string().optional(),
-    hall_no: zod_1.z.number(),
-    date: zod_1.z.string(),
-    time: zod_1.z.string(),
+    hall_no: zod_1.z.number().min(1, { message: 'Hall number is required' }),
+    date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Invalid date format. Use YYYY-MM-DD' }),
+    time: zod_1.z.string().regex(/^\d{2}:\d{2}$/, { message: 'Invalid time format. Use HH:MM' }),
 });
 const BookingSchema = zod_1.z.object({
-    session_id: zod_1.z.number(),
-    name: zod_1.z.string(),
-    email: zod_1.z.string().email(),
-    phone_number: zod_1.z.string(),
-    seats: zod_1.z.array(zod_1.z.string()),
+    session_id: zod_1.z.number().min(1, { message: 'Session ID is required' }),
+    name: zod_1.z.string().min(1, { message: 'Name is required' }),
+    email: zod_1.z.string().email({ message: 'Invalid email address' }),
+    phone_number: zod_1.z.string().length(8, { message: 'Invalid phone number' }),
+    seats: zod_1.z.array(zod_1.z.string().min(1, { message: 'Seat is required' }))
+        .min(1, { message: 'At least one seat must be selected' }),
 });
-// Endpoints
+const BookingIdSchema = zod_1.z.object({
+    bookingId: zod_1.z.string().regex(/^\d+$/, { message: 'Booking ID must be a number' }).transform(Number),
+});
+// Helper function to handle database errors
+function handleDbError(res, error, errorMessage) {
+    return __awaiter(this, void 0, void 0, function* () {
+        console.error('Database error:', error);
+        res.status(500).json({ error: errorMessage, details: error.message });
+    });
+}
+// Endpoints with improved error handling and type safety
 // Get all movies
 app.get('/movies', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -147,8 +172,7 @@ app.get('/movies', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         res.json(movies);
     }
     catch (error) {
-        console.error('Error fetching movies:', error);
-        res.status(500).json({ error: 'Failed to fetch movies' });
+        yield handleDbError(res, error, 'Failed to fetch movies');
     }
 }));
 // Get a movie by ID
@@ -164,8 +188,7 @@ app.get('/movies/:id', (req, res) => __awaiter(void 0, void 0, void 0, function*
         res.json(movie);
     }
     catch (error) {
-        console.error('Error fetching movie:', error);
-        res.status(500).json({ error: 'Failed to fetch movie' });
+        yield handleDbError(res, error, 'Failed to fetch movie');
     }
 }));
 // Get all sessions
@@ -176,8 +199,7 @@ app.get('/sessions', (req, res) => __awaiter(void 0, void 0, void 0, function* (
         res.json(sessions);
     }
     catch (error) {
-        console.error('Error fetching sessions:', error);
-        res.status(500).json({ error: 'Failed to fetch sessions' });
+        yield handleDbError(res, error, 'Failed to fetch sessions');
     }
 }));
 // Get a session by ID
@@ -193,8 +215,7 @@ app.get('/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, functio
         res.json(session);
     }
     catch (error) {
-        console.error('Error fetching session:', error);
-        res.status(500).json({ error: 'Failed to fetch session' });
+        yield handleDbError(res, error, 'Failed to fetch session');
     }
 }));
 // Get session by movie
@@ -205,8 +226,7 @@ app.get('/movies/:id/sessions', (req, res) => __awaiter(void 0, void 0, void 0, 
         res.json(sessions);
     }
     catch (error) {
-        console.error('Error fetching sessions:', error);
-        res.status(500).json({ error: 'Failed to fetch sessions' });
+        yield handleDbError(res, error, 'Failed to fetch sessions');
     }
 }));
 // Get seats for a session
@@ -214,23 +234,19 @@ app.get('/sessions/:id/seats', (req, res) => __awaiter(void 0, void 0, void 0, f
     try {
         const db = yield openDb();
         const sessionId = req.params.id;
-        // Fetch seats for the session
         const seats = yield db.all('SELECT seat FROM booking_seats WHERE session_id = ?', [sessionId]);
-        // Fetch session details
         const sessionDetails = yield db.get('SELECT * FROM sessions WHERE id = ?', [
             sessionId,
         ]);
         if (!sessionDetails) {
             return res.status(404).json({ error: 'Session not found' });
         }
-        // Fetch movie details using the movie_id from the session
         const movieDetails = yield db.get('SELECT * FROM movies WHERE id = ?', [
             sessionDetails.movie_id,
         ]);
         if (!movieDetails) {
             return res.status(404).json({ error: 'Movie not found' });
         }
-        // Return the combined data
         res.json({
             seats: seats.map((s) => s.seat),
             sessionDetails,
@@ -238,81 +254,135 @@ app.get('/sessions/:id/seats', (req, res) => __awaiter(void 0, void 0, void 0, f
         });
     }
     catch (error) {
-        console.error('Error fetching data:', error);
-        res.status(500).json({ error: 'Failed to fetch data' });
+        yield handleDbError(res, error, 'Failed to fetch data');
     }
 }));
-// Book seats
+// Book seats with improved error handling and return summary
 app.post('/book', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const db = yield openDb();
-    let transactionActive = false; // Track if a transaction is active
+    let transactionActive = false;
     try {
         const booking = BookingSchema.parse(req.body);
-        // Start transaction
         yield db.run('BEGIN TRANSACTION');
-        transactionActive = true; // Mark transaction as active
-        // Insert booking
+        transactionActive = true;
         const { lastID: bookingId } = yield db.run('INSERT INTO bookings (session_id, name, email, phone_number) VALUES (?, ?, ?, ?)', [booking.session_id, booking.name, booking.email, booking.phone_number]);
-        // Insert seats
         for (const seat of booking.seats) {
             yield db.run('INSERT INTO booking_seats (booking_id, session_id, seat) VALUES (?, ?, ?)', [bookingId, booking.session_id, seat]);
         }
-        // Commit transaction
         yield db.run('COMMIT');
-        transactionActive = false; // Mark transaction as inactive
-        res.json({ success: true });
+        transactionActive = false;
+        // Fetch the newly created booking details for the summary
+        const bookedDetails = yield db.get('SELECT id, session_id, name, email, phone_number FROM bookings WHERE id = ?', [bookingId]);
+        const bookedSeats = yield db.all('SELECT seat FROM booking_seats WHERE booking_id = ?', [bookingId]);
+        res.json({
+            success: true,
+            bookingSummary: {
+                booking_id: bookedDetails.id,
+                name: bookedDetails.name,
+                email: bookedDetails.email,
+                phone_number: bookedDetails.phone_number,
+                session_id: bookedDetails.session_id,
+                seats: bookedSeats.map((s) => s.seat),
+            },
+        });
     }
     catch (error) {
-        // Rollback only if the transaction is still active
         if (transactionActive) {
             yield db.run('ROLLBACK');
         }
-        console.error('Error booking seats:', error);
-        res.status(400).json({ error: 'Failed to book seats', details: error });
+        if (error instanceof zod_1.z.ZodError) {
+            res.status(400).json({ error: 'Validation failed', details: error.issues });
+        }
+        else {
+            yield handleDbError(res, error, 'Failed to book seats');
+        }
     }
 }));
-// Admin: Add a movie
-app.post('/admin/movies', upload.fields([
-    { name: 'image', maxCount: 1 },
-    { name: 'wide_image', maxCount: 1 },
-]), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+// New endpoint to verify a booking
+app.get('/verify-booking/:bookingId', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // Parse and validate the request body
-        const movie = MovieSchema.parse(req.body);
-        // const movie = req.body;
-        // Get file paths for uploaded images
-        const files = req.files;
-        // Check if the required 'image' file is present
-        if (!files['image'] || files['image'].length === 0) {
-            throw new Error('Image file is required');
+        const { bookingId } = BookingIdSchema.parse(req.params);
+        const db = yield openDb();
+        const bookingDetails = yield db.get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
+        if (!bookingDetails) {
+            return res.status(404).json({ error: 'Booking not found' });
         }
-        const imagePath = files['image'] ? files['image'][0].path : null;
-        const wideImagePath = files['wide_image']
-            ? files['wide_image'][0].path
-            : null;
-        // Insert movie into the database
+        const sessionDetails = yield db.get('SELECT * FROM sessions WHERE id = ?', [bookingDetails.session_id]);
+        if (!sessionDetails) {
+            return res.status(404).json({ error: 'Session not found for this booking' });
+        }
+        const movieDetails = yield db.get('SELECT * FROM movies WHERE id = ?', [sessionDetails.movie_id]);
+        if (!movieDetails) {
+            return res.status(404).json({ error: 'Movie not found for this session' });
+        }
+        const bookedSeats = yield db.all('SELECT seat FROM booking_seats WHERE booking_id = ?', [bookingId]);
+        res.json({
+            status: 'valid',
+            booking: {
+                id: bookingDetails.id,
+                name: bookingDetails.name,
+                email: bookingDetails.email,
+                phone_number: bookingDetails.phone_number,
+                seats: bookedSeats.map((s) => s.seat),
+                session: sessionDetails,
+                movie: movieDetails,
+            },
+        });
+    }
+    catch (error) {
+        if (error instanceof zod_1.z.ZodError) {
+            res.status(400).json({ error: 'Validation failed', details: error.issues });
+        }
+        else {
+            yield handleDbError(res, error, 'Failed to verify booking');
+        }
+    }
+}));
+// Admin: Add a movie with improved error handling and file path handling
+app.post('/admin/movies', upload, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        if (!req.files || !req.files['image']) {
+            return res.status(400).json({ error: 'Image file is required' });
+        }
+        const movieData = MovieSchema.parse(Object.assign(Object.assign({}, req.body), { image: req.files['image'][0].path, wide_image: req.files['wide_image'] ? req.files['wide_image'][0].path : null }));
         const db = yield openDb();
         const { lastID } = yield db.run('INSERT INTO movies (title, description, duration, genre, actors, release_date, transfer_link, image, wide_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
-            movie.title,
-            movie.description,
-            movie.duration,
-            movie.genre,
-            movie.actors,
-            movie.release_date,
-            movie.transfer_link,
-            imagePath,
-            wideImagePath,
+            movieData.title,
+            movieData.description,
+            movieData.duration,
+            movieData.genre,
+            movieData.actors,
+            movieData.release_date,
+            movieData.transfer_link,
+            movieData.image,
+            movieData.wide_image,
         ]);
         res.json({ id: lastID });
     }
     catch (error) {
-        console.error('Error adding movie:', error);
-        res.status(400).json({ error: 'Failed to add movie', details: error });
+        if (error instanceof multer_1.default.MulterError) {
+            if (error.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({ error: 'File size exceeds limit (5MB)' });
+            }
+            else if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+                return res.status(400).json({ error: 'Unexpected file type' });
+            }
+            return res.status(400).json({ error: `Multer Error: ${error.message}` });
+        }
+        else if (error instanceof zod_1.z.ZodError) {
+            res.status(400).json({ error: 'Validation failed', details: error.issues });
+        }
+        else if (error.message === 'Image file is required') {
+            res.status(400).json({ error: 'Image file is required' });
+        }
+        else {
+            yield handleDbError(res, error, 'Failed to add movie');
+        }
     }
 }));
 // Serve uploaded images
 app.use('/uploads', express_1.default.static('uploads'));
-// Admin: Add a session
+// Admin: Add a session with improved error handling
 app.post('/admin/sessions', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const session = SessionSchema.parse(req.body);
@@ -328,12 +398,15 @@ app.post('/admin/sessions', (req, res) => __awaiter(void 0, void 0, void 0, func
         res.json({ id: lastID });
     }
     catch (error) {
-        console.error('Error adding session:', error);
-        res.status(400).json({ error: 'Failed to add session', details: error });
+        if (error instanceof zod_1.z.ZodError) {
+            res.status(400).json({ error: 'Validation failed', details: error.issues });
+        }
+        else {
+            yield handleDbError(res, error, 'Failed to add session');
+        }
     }
 }));
-//Admin update a session
-// Admin: Update a session
+// Admin: Update a session with improved error handling
 app.put('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const session = SessionSchema.parse(req.body);
@@ -348,15 +421,17 @@ app.put('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, f
             req.params.id,
         ]);
         if (changes === 0) {
-            res.status(404).json({ error: 'Session not found' });
+            return res.status(404).json({ error: 'Session not found' });
         }
-        else {
-            res.json({ id: req.params.id });
-        }
+        res.json({ id: req.params.id });
     }
     catch (error) {
-        console.error('Error updating session:', error);
-        res.status(400).json({ error: 'Failed to update session', details: error });
+        if (error instanceof zod_1.z.ZodError) {
+            res.status(400).json({ error: 'Validation failed', details: error.issues });
+        }
+        else {
+            yield handleDbError(res, error, 'Failed to update session');
+        }
     }
 }));
 // Start server
