@@ -280,6 +280,71 @@ app.get('/sessions/:id/seats', async (req: Request, res: Response) => {
   }
 });
 
+// Admin: Get session details with reservations and reserved seats per reservation
+app.get('/admin/sessions/:id/details', async (req: Request, res: Response) => {
+  try {
+    const sessionId = Number(req.params.id);
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
+      return res.status(400).json({ error: 'Invalid session ID' });
+    }
+
+    const db = await openDb();
+    const session = await db.get('SELECT * FROM sessions WHERE id = ?', [
+      sessionId,
+    ]);
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const movie = await db.get('SELECT * FROM movies WHERE id = ?', [
+      session.movie_id,
+    ]);
+
+    if (!movie) {
+      return res
+        .status(404)
+        .json({ error: 'Movie not found for this session' });
+    }
+
+    const reservations = await db.all(
+      'SELECT id, name, email, phone_number FROM bookings WHERE session_id = ? ORDER BY id DESC',
+      [sessionId]
+    );
+
+    const reservationsWithSeats = await Promise.all(
+      reservations.map(async (reservation) => {
+        const seats = await db.all(
+          'SELECT seat FROM booking_seats WHERE booking_id = ? ORDER BY seat ASC',
+          [reservation.id]
+        );
+
+        const reservedSeats = seats.map((s) => s.seat);
+        return {
+          ...reservation,
+          seats: reservedSeats,
+          people_count: reservedSeats.length,
+        };
+      })
+    );
+
+    const totalPeople = reservationsWithSeats.reduce(
+      (acc, reservation) => acc + reservation.people_count,
+      0
+    );
+
+    res.json({
+      session,
+      movie,
+      reservations: reservationsWithSeats,
+      total_reservations: reservationsWithSeats.length,
+      total_people: totalPeople,
+    });
+  } catch (error) {
+    await handleDbError(res, error, 'Failed to fetch session details');
+  }
+});
+
 // Book seats with improved error handling and return summary
 app.post('/book', async (req: Request, res: Response) => {
   const db = await openDb();

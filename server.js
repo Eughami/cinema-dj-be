@@ -257,6 +257,47 @@ app.get('/sessions/:id/seats', (req, res) => __awaiter(void 0, void 0, void 0, f
         yield handleDbError(res, error, 'Failed to fetch data');
     }
 }));
+// Admin: Get session details with reservations and reserved seats per reservation
+app.get('/admin/sessions/:id/details', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const sessionId = Number(req.params.id);
+        if (!Number.isInteger(sessionId) || sessionId <= 0) {
+            return res.status(400).json({ error: 'Invalid session ID' });
+        }
+        const db = yield openDb();
+        const session = yield db.get('SELECT * FROM sessions WHERE id = ?', [
+            sessionId,
+        ]);
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+        const movie = yield db.get('SELECT * FROM movies WHERE id = ?', [
+            session.movie_id,
+        ]);
+        if (!movie) {
+            return res
+                .status(404)
+                .json({ error: 'Movie not found for this session' });
+        }
+        const reservations = yield db.all('SELECT id, name, email, phone_number FROM bookings WHERE session_id = ? ORDER BY id DESC', [sessionId]);
+        const reservationsWithSeats = yield Promise.all(reservations.map((reservation) => __awaiter(void 0, void 0, void 0, function* () {
+            const seats = yield db.all('SELECT seat FROM booking_seats WHERE booking_id = ? ORDER BY seat ASC', [reservation.id]);
+            const reservedSeats = seats.map((s) => s.seat);
+            return Object.assign(Object.assign({}, reservation), { seats: reservedSeats, people_count: reservedSeats.length });
+        })));
+        const totalPeople = reservationsWithSeats.reduce((acc, reservation) => acc + reservation.people_count, 0);
+        res.json({
+            session,
+            movie,
+            reservations: reservationsWithSeats,
+            total_reservations: reservationsWithSeats.length,
+            total_people: totalPeople,
+        });
+    }
+    catch (error) {
+        yield handleDbError(res, error, 'Failed to fetch session details');
+    }
+}));
 // Book seats with improved error handling and return summary
 app.post('/book', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const db = yield openDb();
