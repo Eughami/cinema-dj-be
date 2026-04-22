@@ -111,6 +111,8 @@ async function initializeDb() {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       phone_number TEXT NOT NULL,
+      ip_address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (session_id) REFERENCES sessions(id)
     );
     CREATE TABLE IF NOT EXISTS booking_seats (
@@ -126,7 +128,46 @@ async function initializeDb() {
   console.log('Database initialized');
 }
 
-initializeDb();
+// IP-based duplicate prevention - easily extendable for future requirements
+interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  reason?: string;
+}
+
+const checkForDuplicateBooking = async (
+  db: any,
+  sessionId: number,
+  phoneNumber: string,
+  ipAddress?: string
+): Promise<DuplicateCheckResult> => {
+  // Check by phone number first
+  const existingByPhone = await db.get(
+    `SELECT b.id FROM bookings b
+     JOIN booking_seats bs ON b.id = bs.booking_id
+     WHERE b.session_id = ? AND b.phone_number = ?`,
+    [sessionId, phoneNumber]
+  );
+
+  if (existingByPhone) {
+    return { isDuplicate: true, reason: 'phone' };
+  }
+
+  // Check by IP address (if provided and feature enabled)
+  if (ipAddress && ipAddress !== 'unknown') {
+    const existingByIp = await db.get(
+      `SELECT b.id FROM bookings b
+       JOIN booking_seats bs ON b.id = bs.booking_id
+       WHERE b.session_id = ? AND b.ip_address = ?`,
+      [sessionId, ipAddress]
+    );
+
+    if (existingByIp) {
+      return { isDuplicate: true, reason: 'ip' };
+    }
+  }
+
+  return { isDuplicate: false };
+};
 
 // Zod schemas for input validation with improved type safety and error messages
 const MovieSchema = z.object({
@@ -162,6 +203,8 @@ const BookingSchema = z.object({
 const BookingIdSchema = z.object({
   bookingId: z.string().regex(/^\d+$/, { message: 'Booking ID must be a number' }).transform(Number),
 });
+
+initializeDb();
 
 // Helper function to handle database errors
 async function handleDbError(
@@ -345,6 +388,24 @@ app.get('/admin/sessions/:id/details', async (req: Request, res: Response) => {
   }
 });
 
+// Extract client IP address from request headers (supports proxy scenarios)
+const getClientIp = (req: Request): string => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+
+  const via = req.headers['via'];
+  if (typeof via === 'string') {
+    // Last entry in Via header is the closest client
+    const lastEntry = via.split(',').pop()?.trim() || '';
+    const ipMatch = lastEntry.match(/\d+\.\d+\.\d+\.\d+/);
+    if (ipMatch) return ipMatch[0];
+  }
+
+  return req.socket.remoteAddress || 'unknown';
+};
+
 // Book seats with improved error handling and return summary
 app.post('/book', async (req: Request, res: Response) => {
   const db = await openDb();
@@ -352,13 +413,29 @@ app.post('/book', async (req: Request, res: Response) => {
 
   try {
     const booking = BookingSchema.parse(req.body);
+    const clientIp = getClientIp(req);
+
+    // Check for duplicate bookings by phone or IP
+    const duplicateResult = await checkForDuplicateBooking(
+      db,
+      booking.session_id,
+      booking.phone_number,
+      clientIp
+    );
+
+    if (duplicateResult.isDuplicate) {
+      return res.status(409).json({
+        error: 'Vous avez déjà fait une réservation pour cette session',
+        reason: duplicateResult.reason === 'phone' ? 'phone' : 'ip',
+      });
+    }
 
     await db.run('BEGIN TRANSACTION');
     transactionActive = true;
 
     const { lastID: bookingId } = await db.run(
-      'INSERT INTO bookings (session_id, name, email, phone_number) VALUES (?, ?, ?, ?)',
-      [booking.session_id, booking.name, booking.email, booking.phone_number]
+      'INSERT INTO bookings (session_id, name, email, phone_number, ip_address) VALUES (?, ?, ?, ?, ?)',
+      [booking.session_id, booking.name, booking.email, booking.phone_number, clientIp]
     );
 
     for (const seat of booking.seats) {
