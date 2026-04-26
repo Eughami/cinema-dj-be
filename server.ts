@@ -4,14 +4,26 @@ import morgan from 'morgan';
 import multer from 'multer';
 import sqlite3 from 'sqlite3';
 import { Database, open } from 'sqlite';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { z } from 'zod';
+import dotenv from 'dotenv'
+dotenv.config();
 
 type SqliteDb = Database<sqlite3.Database, sqlite3.Statement>;
 type UploadedFiles = Record<string, Express.Multer.File[]>;
 
 const app = express();
 const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-const adminToken = process.env.ADMIN_TOKEN?.trim() || '';
+const adminUsername = process.env.ADMIN_USERNAME?.trim() || '';
+const adminPassword = process.env.ADMIN_PASSWORD?.trim() || '';
+const adminJwtSecret = process.env.ADMIN_JWT_SECRET?.trim() || '';
+const parsedAdminJwtTtl = Number(process.env.ADMIN_JWT_EXPIRES_IN_SECONDS);
+const adminJwtTtlSeconds =
+  Number.isFinite(parsedAdminJwtTtl) && parsedAdminJwtTtl > 0
+    ? Math.floor(parsedAdminJwtTtl)
+    : 60 * 60 * 8;
+const adminAuthIsConfigured =
+  adminUsername.length > 0 && adminPassword.length > 0 && adminJwtSecret.length > 0;
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -62,45 +74,6 @@ const headerCheckMiddleware = (
 
 app.use(headerCheckMiddleware);
 app.use('/uploads', express.static('uploads'));
-
-const adminAuthMiddleware = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  if (req.method === 'OPTIONS') {
-    next();
-    return;
-  }
-
-  if (!adminToken) {
-    res
-      .status(503)
-      .json({ error: 'Admin API is disabled. Set ADMIN_TOKEN on the server.' });
-    return;
-  }
-
-  const authHeader = req.headers.authorization;
-  const bearerToken =
-    typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7).trim()
-      : '';
-
-  const tokenFromHeader = req.headers['x-admin-token'];
-  const headerToken =
-    typeof tokenFromHeader === 'string' ? tokenFromHeader.trim() : '';
-
-  const providedToken = bearerToken || headerToken;
-
-  if (!providedToken || providedToken !== adminToken) {
-    res.status(401).json({ error: 'Unauthorized admin request' });
-    return;
-  }
-
-  next();
-};
-
-app.use('/admin', adminAuthMiddleware);
 
 const optionalText = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -158,6 +131,20 @@ const BookingIdSchema = z.object({
     .regex(/^\d+$/, { message: 'Booking ID must be a number' })
     .transform(Number),
 });
+
+const AdminLoginSchema = z.object({
+  username: z.string().min(1, { message: 'Username is required' }),
+  password: z.string().min(1, { message: 'Password is required' }),
+});
+
+const AdminJwtPayloadSchema = z.object({
+  sub: z.literal('admin'),
+  username: z.string().min(1),
+  iat: z.number().int().nonnegative(),
+  exp: z.number().int().positive(),
+});
+
+type AdminJwtPayload = z.infer<typeof AdminJwtPayloadSchema>;
 
 async function openDb(): Promise<SqliteDb> {
   return open({
@@ -260,6 +247,174 @@ function parsePositiveId(value: string): number {
 
   return parsedValue;
 }
+
+function toBase64Url(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function fromBase64Url(value: string): string {
+  return Buffer.from(value, 'base64url').toString('utf8');
+}
+
+function timingSafeStringEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, 'utf8');
+  const rightBuffer = Buffer.from(right, 'utf8');
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function signJwt(unsignedToken: string): string {
+  return createHmac('sha256', adminJwtSecret).update(unsignedToken).digest('base64url');
+}
+
+function createAdminJwt(): { token: string; expiresInSeconds: number } {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const payload: AdminJwtPayload = {
+    sub: 'admin',
+    username: adminUsername,
+    iat: issuedAt,
+    exp: issuedAt + adminJwtTtlSeconds,
+  };
+
+  const headerSegment = toBase64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payloadSegment = toBase64Url(JSON.stringify(payload));
+  const unsignedToken = `${headerSegment}.${payloadSegment}`;
+  const signature = signJwt(unsignedToken);
+
+  return {
+    token: `${unsignedToken}.${signature}`,
+    expiresInSeconds: adminJwtTtlSeconds,
+  };
+}
+
+function verifyAdminJwt(token: string): AdminJwtPayload | null {
+  const tokenParts = token.split('.');
+  if (tokenParts.length !== 3) {
+    return null;
+  }
+
+  const [headerSegment, payloadSegment, signatureSegment] = tokenParts;
+  if (!headerSegment || !payloadSegment || !signatureSegment) {
+    return null;
+  }
+
+  try {
+    const parsedHeader = JSON.parse(fromBase64Url(headerSegment)) as {
+      alg?: string;
+      typ?: string;
+    };
+
+    if (parsedHeader.alg !== 'HS256' || parsedHeader.typ !== 'JWT') {
+      return null;
+    }
+
+    const unsignedToken = `${headerSegment}.${payloadSegment}`;
+    const expectedSignature = signJwt(unsignedToken);
+
+    if (!timingSafeStringEqual(signatureSegment, expectedSignature)) {
+      return null;
+    }
+
+    const parsedPayload = JSON.parse(fromBase64Url(payloadSegment));
+    const payloadResult = AdminJwtPayloadSchema.safeParse(parsedPayload);
+    if (!payloadResult.success) {
+      return null;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (payloadResult.data.exp <= now) {
+      return null;
+    }
+
+    return payloadResult.data;
+  } catch {
+    return null;
+  }
+}
+
+app.post('/admin/login', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!adminAuthIsConfigured) {
+      res.status(503).json({
+        error:
+          'Admin API is disabled. Set ADMIN_USERNAME, ADMIN_PASSWORD, and ADMIN_JWT_SECRET on the server.',
+      });
+      return;
+    }
+
+    const credentials = AdminLoginSchema.parse(req.body);
+    const usernameMatches = timingSafeStringEqual(
+      credentials.username.trim(),
+      adminUsername
+    );
+    const passwordMatches = timingSafeStringEqual(credentials.password, adminPassword);
+
+    if (!usernameMatches || !passwordMatches) {
+      res.status(401).json({ error: 'Invalid admin credentials' });
+      return;
+    }
+
+    const jwtResult = createAdminJwt();
+
+    res.json({
+      token: jwtResult.token,
+      token_type: 'Bearer',
+      expires_in: jwtResult.expiresInSeconds,
+    });
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: error.issues });
+      return;
+    }
+
+    console.error('Failed to process admin login:', error);
+    res.status(500).json({ error: 'Failed to process admin login' });
+  }
+});
+
+const adminAuthMiddleware = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+
+  if (!adminAuthIsConfigured) {
+    res.status(503).json({
+      error:
+        'Admin API is disabled. Set ADMIN_USERNAME, ADMIN_PASSWORD, and ADMIN_JWT_SECRET on the server.',
+    });
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  const bearerToken =
+    typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : '';
+
+  if (!bearerToken) {
+    res.status(401).json({ error: 'Missing admin bearer token' });
+    return;
+  }
+
+  const payload = verifyAdminJwt(bearerToken);
+  if (!payload) {
+    res.status(401).json({ error: 'Invalid or expired admin token' });
+    return;
+  }
+
+  next();
+};
+
+app.use('/admin', adminAuthMiddleware);
 
 interface DuplicateCheckResult {
   isDuplicate: boolean;
