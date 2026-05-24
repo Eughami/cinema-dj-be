@@ -1099,6 +1099,6 @@ app.delete('/admin/sessions/:id', async (req: Request, res: Response): Promise<v
 });
 
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => {
+app.listen(port, 'localhost',() => {
   console.log(`Server running on http://localhost:${port}`);
 });
