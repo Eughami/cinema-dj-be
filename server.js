@@ -52,7 +52,7 @@ const uploadMovieImages = (0, multer_1.default)({
             cb(null, true);
             return;
         }
-        cb(new Error('Only JPEG, PNG, and WEBP images are allowed!'));
+        cb(new Error('Seules les images JPEG, PNG et WEBP sont autorisées !'));
     },
 }).fields([
     { name: 'image', maxCount: 1 },
@@ -70,53 +70,53 @@ const headerCheckMiddleware = (_req, _res, next) => {
 app.use(headerCheckMiddleware);
 app.use('/uploads', express_1.default.static('uploads'));
 const optionalText = zod_1.z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), zod_1.z.string().optional());
-const optionalUrl = zod_1.z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), zod_1.z.string().url({ message: 'Invalid URL' }).optional());
+const optionalUrl = zod_1.z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), zod_1.z.string().url({ message: 'URL invalide' }).optional());
 const MoviePayloadSchema = zod_1.z.object({
-    title: zod_1.z.string().min(1, { message: 'Title is required' }),
-    description: zod_1.z.string().min(1, { message: 'Description is required' }),
+    title: zod_1.z.string().min(1, { message: 'Le titre est requis' }),
+    description: zod_1.z.string().min(1, { message: 'La description est requise' }),
     duration: zod_1.z.coerce
         .number()
-        .int({ message: 'Duration must be an integer' })
-        .positive({ message: 'Duration must be greater than 0' }),
+        .int({ message: 'La durée doit être un nombre entier' })
+        .positive({ message: 'La durée doit être supérieure à 0' }),
     genre: optionalText,
     actors: optionalText,
     release_date: zod_1.z
         .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Invalid date format. Use YYYY-MM-DD' }),
+        .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Format de date invalide. Utilisez AAAA-MM-JJ' }),
     transfer_link: optionalUrl,
-    image: zod_1.z.string().min(1, { message: 'Image path is required' }),
+    image: zod_1.z.string().min(1, { message: "Le chemin de l'image est requis" }),
     wide_image: zod_1.z.string().nullable().optional(),
 });
 const SessionSchema = zod_1.z.object({
-    movie_id: zod_1.z.coerce.number().int().min(1, { message: 'Movie ID is required' }),
-    audio: zod_1.z.string().min(1, { message: 'Audio is required' }),
+    movie_id: zod_1.z.coerce.number().int().min(1, { message: "L'identifiant du film est requis" }),
+    audio: zod_1.z.string().min(1, { message: "L'audio est requis" }),
     subtitle: optionalText,
-    hall_no: zod_1.z.coerce.number().int().min(1, { message: 'Hall number is required' }),
+    hall_no: zod_1.z.coerce.number().int().min(1, { message: 'Le numéro de salle est requis' }),
     date: zod_1.z
         .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Invalid date format. Use YYYY-MM-DD' }),
+        .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Format de date invalide. Utilisez AAAA-MM-JJ' }),
     time: zod_1.z
         .string()
-        .regex(/^\d{2}:\d{2}$/, { message: 'Invalid time format. Use HH:MM' }),
+        .regex(/^\d{2}:\d{2}$/, { message: "Format d'heure invalide. Utilisez HH:MM" }),
 });
 const BookingSchema = zod_1.z.object({
-    session_id: zod_1.z.number().min(1, { message: 'Session ID is required' }),
-    name: zod_1.z.string().min(1, { message: 'Name is required' }),
-    email: zod_1.z.string().email({ message: 'Invalid email address' }),
-    phone_number: zod_1.z.string().length(8, { message: 'Invalid phone number' }),
+    session_id: zod_1.z.number().min(1, { message: "L'identifiant de la séance est requis" }),
+    name: zod_1.z.string().min(1, { message: 'Le nom est requis' }),
+    email: zod_1.z.string().email({ message: 'Adresse e-mail invalide' }),
+    phone_number: zod_1.z.string().length(8, { message: 'Numéro de téléphone invalide' }),
     seats: zod_1.z
-        .array(zod_1.z.string().min(1, { message: 'Seat is required' }))
-        .min(1, { message: 'At least one seat must be selected' }),
+        .array(zod_1.z.string().min(1, { message: 'Le siège est requis' }))
+        .min(1, { message: 'Au moins un siège doit être sélectionné' }),
 });
 const BookingIdSchema = zod_1.z.object({
     bookingId: zod_1.z
         .string()
-        .regex(/^\d+$/, { message: 'Booking ID must be a number' })
+        .regex(/^\d+$/, { message: "L'identifiant de réservation doit être un nombre" })
         .transform(Number),
 });
 const AdminLoginSchema = zod_1.z.object({
-    username: zod_1.z.string().min(1, { message: 'Username is required' }),
-    password: zod_1.z.string().min(1, { message: 'Password is required' }),
+    username: zod_1.z.string().min(1, { message: "Le nom d'utilisateur est requis" }),
+    password: zod_1.z.string().min(1, { message: 'Le mot de passe est requis' }),
 });
 const AdminJwtPayloadSchema = zod_1.z.object({
     sub: zod_1.z.literal('admin'),
@@ -182,11 +182,11 @@ function initializeDb() {
       UNIQUE(session_id, seat)
     );
   `);
-        console.log('Database initialized');
+        console.log('Base de données initialisée');
     });
 }
 void initializeDb().catch((error) => {
-    console.error('Database initialization failed:', error);
+    console.error("Échec de l'initialisation de la base de données :", error);
 });
 function getUploadedFiles(req) {
     if (!req.files) {
@@ -201,11 +201,11 @@ function getErrorMessage(error) {
     if (error instanceof Error) {
         return error.message;
     }
-    return 'Unknown error';
+    return 'Erreur inconnue';
 }
 function handleDbError(res, error, errorMessage) {
     return __awaiter(this, void 0, void 0, function* () {
-        console.error('Database error:', error);
+        console.error('Erreur de base de données :', error);
         res.status(500).json({ error: errorMessage, details: getErrorMessage(error) });
     });
 }
@@ -288,7 +288,7 @@ app.post('/admin/login', (req, res) => __awaiter(void 0, void 0, void 0, functio
     try {
         if (!adminAuthIsConfigured) {
             res.status(503).json({
-                error: 'Admin API is disabled. Set ADMIN_USERNAME, ADMIN_PASSWORD, and ADMIN_JWT_SECRET on the server.',
+                error: 'API admin désactivée. Définissez ADMIN_USERNAME, ADMIN_PASSWORD et ADMIN_JWT_SECRET sur le serveur.',
             });
             return;
         }
@@ -296,7 +296,7 @@ app.post('/admin/login', (req, res) => __awaiter(void 0, void 0, void 0, functio
         const usernameMatches = timingSafeStringEqual(credentials.username.trim(), adminUsername);
         const passwordMatches = timingSafeStringEqual(credentials.password, adminPassword);
         if (!usernameMatches || !passwordMatches) {
-            res.status(401).json({ error: 'Invalid admin credentials' });
+            res.status(401).json({ error: 'Identifiants admin invalides' });
             return;
         }
         const jwtResult = createAdminJwt();
@@ -308,11 +308,11 @@ app.post('/admin/login', (req, res) => __awaiter(void 0, void 0, void 0, functio
     }
     catch (error) {
         if (error instanceof zod_1.z.ZodError) {
-            res.status(400).json({ error: 'Validation failed', details: error.issues });
+            res.status(400).json({ error: 'Échec de la validation', details: error.issues });
             return;
         }
-        console.error('Failed to process admin login:', error);
-        res.status(500).json({ error: 'Failed to process admin login' });
+        console.error('Échec du traitement de la connexion admin:', error);
+        res.status(500).json({ error: 'Échec du traitement de la connexion admin' });
     }
 }));
 const adminAuthMiddleware = (req, res, next) => {
@@ -322,7 +322,7 @@ const adminAuthMiddleware = (req, res, next) => {
     }
     if (!adminAuthIsConfigured) {
         res.status(503).json({
-            error: 'Admin API is disabled. Set ADMIN_USERNAME, ADMIN_PASSWORD, and ADMIN_JWT_SECRET on the server.',
+            error: 'API admin désactivée. Définissez ADMIN_USERNAME, ADMIN_PASSWORD et ADMIN_JWT_SECRET sur le serveur.',
         });
         return;
     }
@@ -331,12 +331,12 @@ const adminAuthMiddleware = (req, res, next) => {
         ? authHeader.slice(7).trim()
         : '';
     if (!bearerToken) {
-        res.status(401).json({ error: 'Missing admin bearer token' });
+        res.status(401).json({ error: "Jeton d'authentification admin manquant" });
         return;
     }
     const payload = verifyAdminJwt(bearerToken);
     if (!payload) {
-        res.status(401).json({ error: 'Invalid or expired admin token' });
+        res.status(401).json({ error: 'Jeton admin invalide ou expiré' });
         return;
     }
     next();
@@ -384,7 +384,7 @@ app.get('/movies', (_req, res) => __awaiter(void 0, void 0, void 0, function* ()
         res.json(movies);
     }
     catch (error) {
-        yield handleDbError(res, error, 'Failed to fetch movies');
+        yield handleDbError(res, error, 'Échec de la récupération des films');
     }
 }));
 app.get('/movies/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -392,18 +392,18 @@ app.get('/movies/:id', (req, res) => __awaiter(void 0, void 0, void 0, function*
         const db = yield openDb();
         const movieId = parsePositiveId(req.params.id);
         if (!movieId) {
-            res.status(400).json({ error: 'Invalid movie ID' });
+            res.status(400).json({ error: 'Identifiant de film invalide' });
             return;
         }
         const movie = yield db.get('SELECT * FROM movies WHERE id = ?', [movieId]);
         if (!movie) {
-            res.status(404).json({ error: 'Movie not found' });
+            res.status(404).json({ error: 'Film introuvable' });
             return;
         }
         res.json(movie);
     }
     catch (error) {
-        yield handleDbError(res, error, 'Failed to fetch movie');
+        yield handleDbError(res, error, 'Échec de la récupération du film');
     }
 }));
 app.get('/sessions', (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -413,7 +413,7 @@ app.get('/sessions', (_req, res) => __awaiter(void 0, void 0, void 0, function* 
         res.json(sessions);
     }
     catch (error) {
-        yield handleDbError(res, error, 'Failed to fetch sessions');
+        yield handleDbError(res, error, 'Échec de la récupération des séances');
     }
 }));
 app.get('/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -421,18 +421,18 @@ app.get('/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, functio
         const db = yield openDb();
         const sessionId = parsePositiveId(req.params.id);
         if (!sessionId) {
-            res.status(400).json({ error: 'Invalid session ID' });
+            res.status(400).json({ error: 'Identifiant de séance invalide' });
             return;
         }
         const session = yield db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
         if (!session) {
-            res.status(404).json({ error: 'Session not found' });
+            res.status(404).json({ error: 'Séance introuvable' });
             return;
         }
         res.json(session);
     }
     catch (error) {
-        yield handleDbError(res, error, 'Failed to fetch session');
+        yield handleDbError(res, error, 'Échec de la récupération de la séance');
     }
 }));
 app.get('/movies/:id/sessions', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -440,14 +440,14 @@ app.get('/movies/:id/sessions', (req, res) => __awaiter(void 0, void 0, void 0, 
         const db = yield openDb();
         const movieId = parsePositiveId(req.params.id);
         if (!movieId) {
-            res.status(400).json({ error: 'Invalid movie ID' });
+            res.status(400).json({ error: 'Identifiant de film invalide' });
             return;
         }
         const sessions = yield db.all('SELECT * FROM sessions WHERE movie_id = ?', [movieId]);
         res.json(sessions);
     }
     catch (error) {
-        yield handleDbError(res, error, 'Failed to fetch sessions');
+        yield handleDbError(res, error, 'Échec de la récupération des séances');
     }
 }));
 app.get('/sessions/:id/seats', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -455,7 +455,7 @@ app.get('/sessions/:id/seats', (req, res) => __awaiter(void 0, void 0, void 0, f
         const db = yield openDb();
         const sessionId = parsePositiveId(req.params.id);
         if (!sessionId) {
-            res.status(400).json({ error: 'Invalid session ID' });
+            res.status(400).json({ error: 'Identifiant de séance invalide' });
             return;
         }
         const seats = yield db.all('SELECT seat FROM booking_seats WHERE session_id = ?', [sessionId]);
@@ -463,14 +463,14 @@ app.get('/sessions/:id/seats', (req, res) => __awaiter(void 0, void 0, void 0, f
             sessionId,
         ]);
         if (!sessionDetails) {
-            res.status(404).json({ error: 'Session not found' });
+            res.status(404).json({ error: 'Séance introuvable' });
             return;
         }
         const movieDetails = yield db.get('SELECT * FROM movies WHERE id = ?', [
             sessionDetails.movie_id,
         ]);
         if (!movieDetails) {
-            res.status(404).json({ error: 'Movie not found' });
+            res.status(404).json({ error: 'Film introuvable' });
             return;
         }
         res.json({
@@ -480,25 +480,25 @@ app.get('/sessions/:id/seats', (req, res) => __awaiter(void 0, void 0, void 0, f
         });
     }
     catch (error) {
-        yield handleDbError(res, error, 'Failed to fetch data');
+        yield handleDbError(res, error, 'Échec de la récupération des données');
     }
 }));
 app.get('/admin/sessions/:id/details', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const sessionId = parsePositiveId(req.params.id);
         if (!sessionId) {
-            res.status(400).json({ error: 'Invalid session ID' });
+            res.status(400).json({ error: 'Identifiant de séance invalide' });
             return;
         }
         const db = yield openDb();
         const session = yield db.get('SELECT * FROM sessions WHERE id = ?', [sessionId]);
         if (!session) {
-            res.status(404).json({ error: 'Session not found' });
+            res.status(404).json({ error: 'Séance introuvable' });
             return;
         }
         const movie = yield db.get('SELECT * FROM movies WHERE id = ?', [session.movie_id]);
         if (!movie) {
-            res.status(404).json({ error: 'Movie not found for this session' });
+            res.status(404).json({ error: 'Film introuvable pour cette séance' });
             return;
         }
         const reservations = yield db.all('SELECT id, name, email, phone_number FROM bookings WHERE session_id = ? ORDER BY id DESC', [sessionId]);
@@ -517,7 +517,7 @@ app.get('/admin/sessions/:id/details', (req, res) => __awaiter(void 0, void 0, v
         });
     }
     catch (error) {
-        yield handleDbError(res, error, 'Failed to fetch session details');
+        yield handleDbError(res, error, 'Échec de la récupération des détails de la séance');
     }
 }));
 app.post('/book', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -565,10 +565,10 @@ app.post('/book', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             yield db.run('ROLLBACK');
         }
         if (error instanceof zod_1.z.ZodError) {
-            res.status(400).json({ error: 'Validation failed', details: error.issues });
+            res.status(400).json({ error: 'Échec de la validation', details: error.issues });
             return;
         }
-        yield handleDbError(res, error, 'Failed to book seats');
+        yield handleDbError(res, error, 'Échec de la réservation des places');
     }
 }));
 app.get('/verify-booking/:bookingId', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -577,21 +577,21 @@ app.get('/verify-booking/:bookingId', (req, res) => __awaiter(void 0, void 0, vo
         const db = yield openDb();
         const bookingDetails = yield db.get('SELECT * FROM bookings WHERE id = ?', [bookingId]);
         if (!bookingDetails) {
-            res.status(404).json({ error: 'Booking not found' });
+            res.status(404).json({ error: 'Réservation introuvable' });
             return;
         }
         const sessionDetails = yield db.get('SELECT * FROM sessions WHERE id = ?', [
             bookingDetails.session_id,
         ]);
         if (!sessionDetails) {
-            res.status(404).json({ error: 'Session not found for this booking' });
+            res.status(404).json({ error: 'Séance introuvable pour cette réservation' });
             return;
         }
         const movieDetails = yield db.get('SELECT * FROM movies WHERE id = ?', [
             sessionDetails.movie_id,
         ]);
         if (!movieDetails) {
-            res.status(404).json({ error: 'Movie not found for this session' });
+            res.status(404).json({ error: 'Film introuvable pour cette séance' });
             return;
         }
         const bookedSeats = yield db.all('SELECT seat FROM booking_seats WHERE booking_id = ?', [bookingId]);
@@ -610,10 +610,10 @@ app.get('/verify-booking/:bookingId', (req, res) => __awaiter(void 0, void 0, vo
     }
     catch (error) {
         if (error instanceof zod_1.z.ZodError) {
-            res.status(400).json({ error: 'Validation failed', details: error.issues });
+            res.status(400).json({ error: 'Échec de la validation', details: error.issues });
             return;
         }
-        yield handleDbError(res, error, 'Failed to verify booking');
+        yield handleDbError(res, error, 'Échec de la vérification de la réservation');
     }
 }));
 app.post('/admin/movies', uploadMovieImages, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -622,7 +622,7 @@ app.post('/admin/movies', uploadMovieImages, (req, res) => __awaiter(void 0, voi
         const files = getUploadedFiles(req);
         const imageFile = (_a = files.image) === null || _a === void 0 ? void 0 : _a[0];
         if (!imageFile) {
-            res.status(400).json({ error: 'Image file is required' });
+            res.status(400).json({ error: 'Le fichier image est requis' });
             return;
         }
         const movieData = MoviePayloadSchema.parse(Object.assign(Object.assign({}, req.body), { image: imageFile.path, wide_image: (_d = (_c = (_b = files.wide_image) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.path) !== null && _d !== void 0 ? _d : null }));
@@ -643,21 +643,21 @@ app.post('/admin/movies', uploadMovieImages, (req, res) => __awaiter(void 0, voi
     catch (error) {
         if (error instanceof multer_1.default.MulterError) {
             if (error.code === 'LIMIT_FILE_SIZE') {
-                res.status(413).json({ error: 'File size exceeds limit (5MB)' });
+                res.status(413).json({ error: 'La taille du fichier dépasse la limite (5 Mo)' });
                 return;
             }
             if (error.code === 'LIMIT_UNEXPECTED_FILE') {
-                res.status(400).json({ error: 'Unexpected file type' });
+                res.status(400).json({ error: 'Type de fichier inattendu' });
                 return;
             }
-            res.status(400).json({ error: `Multer Error: ${error.message}` });
+            res.status(400).json({ error: `Erreur Multer : ${error.message}` });
             return;
         }
         if (error instanceof zod_1.z.ZodError) {
-            res.status(400).json({ error: 'Validation failed', details: error.issues });
+            res.status(400).json({ error: 'Échec de la validation', details: error.issues });
             return;
         }
-        yield handleDbError(res, error, 'Failed to add movie');
+        yield handleDbError(res, error, "Échec de l'ajout du film");
     }
 }));
 app.put('/admin/movies/:id', uploadMovieImages, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -665,13 +665,13 @@ app.put('/admin/movies/:id', uploadMovieImages, (req, res) => __awaiter(void 0, 
     try {
         const movieId = parsePositiveId(req.params.id);
         if (!movieId) {
-            res.status(400).json({ error: 'Invalid movie ID' });
+            res.status(400).json({ error: 'Identifiant de film invalide' });
             return;
         }
         const db = yield openDb();
         const existingMovie = yield db.get('SELECT id, image, wide_image FROM movies WHERE id = ?', [movieId]);
         if (!existingMovie) {
-            res.status(404).json({ error: 'Movie not found' });
+            res.status(404).json({ error: 'Film introuvable' });
             return;
         }
         const files = getUploadedFiles(req);
@@ -689,7 +689,7 @@ app.put('/admin/movies/:id', uploadMovieImages, (req, res) => __awaiter(void 0, 
             movieId,
         ]);
         if (!updatedMovie.changes) {
-            res.status(404).json({ error: 'Movie not found' });
+            res.status(404).json({ error: 'Film introuvable' });
             return;
         }
         res.json({ id: movieId });
@@ -697,21 +697,21 @@ app.put('/admin/movies/:id', uploadMovieImages, (req, res) => __awaiter(void 0, 
     catch (error) {
         if (error instanceof multer_1.default.MulterError) {
             if (error.code === 'LIMIT_FILE_SIZE') {
-                res.status(413).json({ error: 'File size exceeds limit (5MB)' });
+                res.status(413).json({ error: 'La taille du fichier dépasse la limite (5 Mo)' });
                 return;
             }
             if (error.code === 'LIMIT_UNEXPECTED_FILE') {
-                res.status(400).json({ error: 'Unexpected file type' });
+                res.status(400).json({ error: 'Type de fichier inattendu' });
                 return;
             }
-            res.status(400).json({ error: `Multer Error: ${error.message}` });
+            res.status(400).json({ error: `Erreur Multer : ${error.message}` });
             return;
         }
         if (error instanceof zod_1.z.ZodError) {
-            res.status(400).json({ error: 'Validation failed', details: error.issues });
+            res.status(400).json({ error: 'Échec de la validation', details: error.issues });
             return;
         }
-        yield handleDbError(res, error, 'Failed to update movie');
+        yield handleDbError(res, error, 'Échec de la mise à jour du film');
     }
 }));
 app.delete('/admin/movies/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -720,13 +720,13 @@ app.delete('/admin/movies/:id', (req, res) => __awaiter(void 0, void 0, void 0, 
     try {
         const movieId = parsePositiveId(req.params.id);
         if (!movieId) {
-            res.status(400).json({ error: 'Invalid movie ID' });
+            res.status(400).json({ error: 'Identifiant de film invalide' });
             return;
         }
         db = yield openDb();
         const movie = yield db.get('SELECT id FROM movies WHERE id = ?', [movieId]);
         if (!movie) {
-            res.status(404).json({ error: 'Movie not found' });
+            res.status(404).json({ error: 'Film introuvable' });
             return;
         }
         yield db.run('BEGIN TRANSACTION');
@@ -743,7 +743,7 @@ app.delete('/admin/movies/:id', (req, res) => __awaiter(void 0, void 0, void 0, 
         if (transactionActive && db) {
             yield db.run('ROLLBACK');
         }
-        yield handleDbError(res, error, 'Failed to delete movie');
+        yield handleDbError(res, error, 'Échec de la suppression du film');
     }
 }));
 app.post('/admin/sessions', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -762,17 +762,17 @@ app.post('/admin/sessions', (req, res) => __awaiter(void 0, void 0, void 0, func
     }
     catch (error) {
         if (error instanceof zod_1.z.ZodError) {
-            res.status(400).json({ error: 'Validation failed', details: error.issues });
+            res.status(400).json({ error: 'Échec de la validation', details: error.issues });
             return;
         }
-        yield handleDbError(res, error, 'Failed to add session');
+        yield handleDbError(res, error, "Échec de l'ajout de la séance");
     }
 }));
 app.put('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const sessionId = parsePositiveId(req.params.id);
         if (!sessionId) {
-            res.status(400).json({ error: 'Invalid session ID' });
+            res.status(400).json({ error: 'Identifiant de séance invalide' });
             return;
         }
         const session = SessionSchema.parse(req.body);
@@ -787,17 +787,17 @@ app.put('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, f
             sessionId,
         ]);
         if (!updatedSession.changes) {
-            res.status(404).json({ error: 'Session not found' });
+            res.status(404).json({ error: 'Séance introuvable' });
             return;
         }
         res.json({ id: sessionId });
     }
     catch (error) {
         if (error instanceof zod_1.z.ZodError) {
-            res.status(400).json({ error: 'Validation failed', details: error.issues });
+            res.status(400).json({ error: 'Échec de la validation', details: error.issues });
             return;
         }
-        yield handleDbError(res, error, 'Failed to update session');
+        yield handleDbError(res, error, 'Échec de la mise à jour de la séance');
     }
 }));
 app.delete('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -806,13 +806,13 @@ app.delete('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0
     try {
         const sessionId = parsePositiveId(req.params.id);
         if (!sessionId) {
-            res.status(400).json({ error: 'Invalid session ID' });
+            res.status(400).json({ error: 'Identifiant de séance invalide' });
             return;
         }
         db = yield openDb();
         const session = yield db.get('SELECT id FROM sessions WHERE id = ?', [sessionId]);
         if (!session) {
-            res.status(404).json({ error: 'Session not found' });
+            res.status(404).json({ error: 'Séance introuvable' });
             return;
         }
         yield db.run('BEGIN TRANSACTION');
@@ -828,10 +828,10 @@ app.delete('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0
         if (transactionActive && db) {
             yield db.run('ROLLBACK');
         }
-        yield handleDbError(res, error, 'Failed to delete session');
+        yield handleDbError(res, error, 'Échec de la suppression de la séance');
     }
 }));
 const port = Number(process.env.PORT) || 3000;
 app.listen(port, 'localhost', () => {
-    console.log(`Server running on http://localhost:${port}`);
+    console.log(`Serveur en cours d'exécution sur http://localhost:${port}`);
 });
