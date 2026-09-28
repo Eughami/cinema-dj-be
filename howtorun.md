@@ -28,8 +28,8 @@ npm install
 TMDB_API_KEY=paste-your-32-char-key-here
 TMDB_REGION=FR
 TMDB_LANGUAGE=fr-FR
-TMDB_MAX_NOW_PLAYING=5   # real "now playing" movies added per run
-TMDB_MAX_UPCOMING=2      # future premieres (no sessions yet) per run
+TMDB_MAX_NOW_PLAYING=8   # real "now playing" movies added per run
+TMDB_MAX_UPCOMING=8      # future premieres (no sessions yet) per run
 ```
 
 Without a key, everything still works in **catalog fallback mode**
@@ -80,6 +80,9 @@ Notes:
   sessions topped up — so every visit shows current movies.
 - Re-runs are idempotent: already-imported TMDB titles are skipped
   (via `tmdb_id`), and full days get no duplicate sessions.
+- Session age policy: films released in the last 14 days get a full
+  rotation, films 15–30 days old are capped at 2 sessions per hall per
+  day, and films older than 30 days are never scheduled again.
 
 ## 5. Useful commands
 

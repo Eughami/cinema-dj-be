@@ -114,6 +114,8 @@ const LATEST_END_MINUTES: number = 23 * 60 + 59;
 const CLEANING_BUFFER_MINUTES: number = 30;
 const CURSOR_STEP_MINUTES: number = 15;
 const MAX_MOVIE_AGE_DAYS: number = 30;
+const FRESH_MOVIE_DAYS: number = 14;
+const MAX_OLDER_MOVIE_SESSIONS_PER_DAY: number = 2;
 const NEW_MOVIES_PER_WEEK: number = 2;
 const FUTURE_RELEASE_OFFSET_DAYS: number = 21;
 const SCHEDULER_INTERVAL_MS: number = 60 * 60 * 1000;
@@ -319,6 +321,12 @@ export function isWednesdayDate(dateString: string): boolean {
   return parsed.getDay() === 3;
 }
 
+export function daysBetweenDateStrings(laterDate: string, earlierDate: string): number {
+  const later: Date = new Date(`${laterDate}T12:00:00`);
+  const earlier: Date = new Date(`${earlierDate}T12:00:00`);
+  return Math.round((later.getTime() - earlier.getTime()) / 86400000);
+}
+
 export function timeToMinutes(timeString: string): number {
   const parts: string[] = timeString.split(':');
   const hours: number = Number(parts[0]);
@@ -363,7 +371,7 @@ export function getTmdbMaxNowPlaying(): number {
   if (Number.isInteger(parsed) && parsed > 0 && parsed <= 20) {
     return parsed;
   }
-  return 5;
+  return 8;
 }
 
 export function getTmdbMaxUpcoming(): number {
@@ -371,7 +379,7 @@ export function getTmdbMaxUpcoming(): number {
   if (Number.isInteger(parsed) && parsed > 0 && parsed <= 20) {
     return parsed;
   }
-  return 2;
+  return 8;
 }
 
 export function shouldAddMovies(today: string, options: SchedulerOptions): boolean {
@@ -824,6 +832,7 @@ function planDayForHall(
   startPointer: number
 ): { planned: PlannedSession[]; nextPointer: number } {
   const planned: PlannedSession[] = [];
+  const sessionsPerMovie: Map<number, number> = new Map<number, number>();
   let pointer: number = startPointer % Math.max(candidates.length, 1);
   let cursor: number = OPEN_MINUTES;
   let guard: number = 0;
@@ -836,6 +845,16 @@ function planDayForHall(
     for (let step = 0; step < candidates.length; step++) {
       const candidate: MovieRow = candidates[(pointer + step) % candidates.length];
       if (candidate.release_date > date) {
+        continue;
+      }
+      const ageDays: number = daysBetweenDateStrings(date, candidate.release_date);
+      if (ageDays > MAX_MOVIE_AGE_DAYS) {
+        continue;
+      }
+      if (
+        ageDays > FRESH_MOVIE_DAYS &&
+        (sessionsPerMovie.get(candidate.id) ?? 0) >= MAX_OLDER_MOVIE_SESSIONS_PER_DAY
+      ) {
         continue;
       }
       const endMinutes: number = cursor + candidate.duration;
@@ -857,6 +876,10 @@ function planDayForHall(
         time: minutesToTime(cursor),
       });
       blocked.push({ start: cursor, end: busyEnd });
+      sessionsPerMovie.set(
+        candidate.id,
+        (sessionsPerMovie.get(candidate.id) ?? 0) + 1
+      );
       pointer = (pointer + step + 1) % candidates.length;
       cursor = busyEnd;
       slotIndex += 1;
@@ -945,18 +968,10 @@ export async function runWeeklySchedule(
       eligible = selectEligibleMovies(movies, weekEnd, cutoff);
     }
 
-    if (eligible.length === 0 && movies.length > 0) {
-      const fallback: MovieRow[] = [...movies].sort((left: MovieRow, right: MovieRow) =>
-        right.release_date.localeCompare(left.release_date)
-      );
-      eligible = fallback.slice(0, 2);
-      console.log(
-        'Aucun film récent éligible : repli sur les films les plus récents pour éviter un site vide.'
-      );
-    }
-
     if (eligible.length === 0) {
-      console.log('Aucun film en base : impossible de planifier des séances.');
+      console.log(
+        'Aucun film de moins de 30 jours : aucune séance planifiée.'
+      );
       await db.close();
       return summary;
     }

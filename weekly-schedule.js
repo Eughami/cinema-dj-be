@@ -16,6 +16,7 @@ exports.parseArgs = parseArgs;
 exports.formatDateString = formatDateString;
 exports.addDaysToDateString = addDaysToDateString;
 exports.isWednesdayDate = isWednesdayDate;
+exports.daysBetweenDateStrings = daysBetweenDateStrings;
 exports.timeToMinutes = timeToMinutes;
 exports.minutesToTime = minutesToTime;
 exports.buildPosterUrl = buildPosterUrl;
@@ -53,6 +54,8 @@ const LATEST_END_MINUTES = 23 * 60 + 59;
 const CLEANING_BUFFER_MINUTES = 30;
 const CURSOR_STEP_MINUTES = 15;
 const MAX_MOVIE_AGE_DAYS = 30;
+const FRESH_MOVIE_DAYS = 14;
+const MAX_OLDER_MOVIE_SESSIONS_PER_DAY = 2;
 const NEW_MOVIES_PER_WEEK = 2;
 const FUTURE_RELEASE_OFFSET_DAYS = 21;
 const SCHEDULER_INTERVAL_MS = 60 * 60 * 1000;
@@ -240,6 +243,11 @@ function isWednesdayDate(dateString) {
     const parsed = new Date(`${dateString}T12:00:00`);
     return parsed.getDay() === 3;
 }
+function daysBetweenDateStrings(laterDate, earlierDate) {
+    const later = new Date(`${laterDate}T12:00:00`);
+    const earlier = new Date(`${earlierDate}T12:00:00`);
+    return Math.round((later.getTime() - earlier.getTime()) / 86400000);
+}
 function timeToMinutes(timeString) {
     const parts = timeString.split(':');
     const hours = Number(parts[0]);
@@ -280,14 +288,14 @@ function getTmdbMaxNowPlaying() {
     if (Number.isInteger(parsed) && parsed > 0 && parsed <= 20) {
         return parsed;
     }
-    return 5;
+    return 8;
 }
 function getTmdbMaxUpcoming() {
     const parsed = Number(process.env.TMDB_MAX_UPCOMING);
     if (Number.isInteger(parsed) && parsed > 0 && parsed <= 20) {
         return parsed;
     }
-    return 2;
+    return 8;
 }
 function shouldAddMovies(today, options) {
     if (options.sessionsOnly) {
@@ -660,7 +668,9 @@ function pickAudioTrack(slotIndex) {
     return { audio: 'French', subtitle: null };
 }
 function planDayForHall(date, hallNo, candidates, blocked, startPointer) {
+    var _a, _b;
     const planned = [];
+    const sessionsPerMovie = new Map();
     let pointer = startPointer % Math.max(candidates.length, 1);
     let cursor = OPEN_MINUTES;
     let guard = 0;
@@ -671,6 +681,14 @@ function planDayForHall(date, hallNo, candidates, blocked, startPointer) {
         for (let step = 0; step < candidates.length; step++) {
             const candidate = candidates[(pointer + step) % candidates.length];
             if (candidate.release_date > date) {
+                continue;
+            }
+            const ageDays = daysBetweenDateStrings(date, candidate.release_date);
+            if (ageDays > MAX_MOVIE_AGE_DAYS) {
+                continue;
+            }
+            if (ageDays > FRESH_MOVIE_DAYS &&
+                ((_a = sessionsPerMovie.get(candidate.id)) !== null && _a !== void 0 ? _a : 0) >= MAX_OLDER_MOVIE_SESSIONS_PER_DAY) {
                 continue;
             }
             const endMinutes = cursor + candidate.duration;
@@ -691,6 +709,7 @@ function planDayForHall(date, hallNo, candidates, blocked, startPointer) {
                 time: minutesToTime(cursor),
             });
             blocked.push({ start: cursor, end: busyEnd });
+            sessionsPerMovie.set(candidate.id, ((_b = sessionsPerMovie.get(candidate.id)) !== null && _b !== void 0 ? _b : 0) + 1);
             pointer = (pointer + step + 1) % candidates.length;
             cursor = busyEnd;
             slotIndex += 1;
@@ -754,13 +773,8 @@ function runWeeklySchedule() {
                 }
                 eligible = selectEligibleMovies(movies, weekEnd, cutoff);
             }
-            if (eligible.length === 0 && movies.length > 0) {
-                const fallback = [...movies].sort((left, right) => right.release_date.localeCompare(left.release_date));
-                eligible = fallback.slice(0, 2);
-                console.log('Aucun film récent éligible : repli sur les films les plus récents pour éviter un site vide.');
-            }
             if (eligible.length === 0) {
-                console.log('Aucun film en base : impossible de planifier des séances.');
+                console.log('Aucun film de moins de 30 jours : aucune séance planifiée.');
                 yield db.close();
                 return summary;
             }
