@@ -7,6 +7,7 @@ import { Database, open } from 'sqlite';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import dotenv from 'dotenv'
+import { startWeeklyScheduler } from './weekly-schedule';
 dotenv.config();
 
 type SqliteDb = Database<sqlite3.Database, sqlite3.Statement>;
@@ -202,6 +203,15 @@ async function initializeDb(): Promise<void> {
       UNIQUE(session_id, seat)
     );
   `);
+
+  try {
+    await db.exec('ALTER TABLE movies ADD COLUMN tmdb_id INTEGER');
+  } catch (error: unknown) {
+    const message: string = getErrorMessage(error).toLowerCase();
+    if (!message.includes('duplicate column')) {
+      throw error;
+    }
+  }
 
   console.log('Base de données initialisée');
 }
@@ -1099,6 +1109,7 @@ app.delete('/admin/sessions/:id', async (req: Request, res: Response): Promise<v
 });
 
 const port = Number(process.env.PORT) || 3000;
+startWeeklyScheduler();
 app.listen(port, 'localhost',() => {
   console.log(`Serveur en cours d'exécution sur http://localhost:${port}`);
 });

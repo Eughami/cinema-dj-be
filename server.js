@@ -22,6 +22,7 @@ const sqlite_1 = require("sqlite");
 const crypto_1 = require("crypto");
 const zod_1 = require("zod");
 const dotenv_1 = __importDefault(require("dotenv"));
+const weekly_schedule_1 = require("./weekly-schedule");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -182,6 +183,15 @@ function initializeDb() {
       UNIQUE(session_id, seat)
     );
   `);
+        try {
+            yield db.exec('ALTER TABLE movies ADD COLUMN tmdb_id INTEGER');
+        }
+        catch (error) {
+            const message = getErrorMessage(error).toLowerCase();
+            if (!message.includes('duplicate column')) {
+                throw error;
+            }
+        }
         console.log('Base de données initialisée');
     });
 }
@@ -832,6 +842,7 @@ app.delete('/admin/sessions/:id', (req, res) => __awaiter(void 0, void 0, void 0
     }
 }));
 const port = Number(process.env.PORT) || 3000;
+(0, weekly_schedule_1.startWeeklyScheduler)();
 app.listen(port, 'localhost', () => {
     console.log(`Serveur en cours d'exécution sur http://localhost:${port}`);
 });

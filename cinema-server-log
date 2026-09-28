@@ -47518,3 +47518,10 @@ Database initialized
 ::1 - - [22/Sep/2026:21:14:21 +0000] "GET / HTTP/1.1" 404 139 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 ::1 - - [22/Sep/2026:21:41:12 +0000] "GET / HTTP/1.1" 404 139 "-" "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1"
 ::1 - - [22/Sep/2026:23:55:04 +0000] "GET / HTTP/1.1" 404 139 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+[2026-09-28 11:25:20] === weekly cinema sync start ===
+[2026-09-28 11:25:20] mode: catalog fallback (TMDB_API_KEY not set)
+[2026-09-28 11:25:20] runner: node weekly-schedule.js --auto
+Ajout de films ignoré (hors mercredi ou mode séances uniquement).
+Semaine 2026-09-28 -> 2026-10-04 : 0 film(s), 0 séance(s) planifiée(s), 0 ignorée(s).
+Terminé : 0 film(s), 0 séance(s).
+[2026-09-28 11:25:21] === weekly cinema sync done (exit 0) ===
