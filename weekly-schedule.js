@@ -19,9 +19,7 @@ exports.isWednesdayDate = isWednesdayDate;
 exports.daysBetweenDateStrings = daysBetweenDateStrings;
 exports.timeToMinutes = timeToMinutes;
 exports.minutesToTime = minutesToTime;
-exports.buildPosterUrl = buildPosterUrl;
 exports.getTmdbApiKey = getTmdbApiKey;
-exports.isTmdbConfigured = isTmdbConfigured;
 exports.getTmdbRegion = getTmdbRegion;
 exports.getTmdbLanguage = getTmdbLanguage;
 exports.getTmdbMaxNowPlaying = getTmdbMaxNowPlaying;
@@ -38,7 +36,6 @@ exports.ensureTmdbColumn = ensureTmdbColumn;
 exports.fetchRealMovieEntries = fetchRealMovieEntries;
 exports.intervalsOverlap = intervalsOverlap;
 exports.fitsWithoutOverlap = fitsWithoutOverlap;
-exports.pickNewCatalogMovies = pickNewCatalogMovies;
 exports.buildWeekDates = buildWeekDates;
 exports.pickAudioTrack = pickAudioTrack;
 exports.runWeeklySchedule = runWeeklySchedule;
@@ -47,6 +44,8 @@ const sqlite3_1 = __importDefault(require("sqlite3"));
 const sqlite_1 = require("sqlite");
 const promises_1 = require("fs/promises");
 const path_1 = __importDefault(require("path"));
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config();
 const HALLS = [1, 2];
 const OPEN_MINUTES = 11 * 60;
 const LAST_START_MINUTES = 22 * 60 + 30;
@@ -56,142 +55,10 @@ const CURSOR_STEP_MINUTES = 15;
 const MAX_MOVIE_AGE_DAYS = 30;
 const FRESH_MOVIE_DAYS = 14;
 const MAX_OLDER_MOVIE_SESSIONS_PER_DAY = 2;
-const NEW_MOVIES_PER_WEEK = 2;
-const FUTURE_RELEASE_OFFSET_DAYS = 21;
 const SCHEDULER_INTERVAL_MS = 60 * 60 * 1000;
 const TMDB_API_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const TMDB_REQUEST_DELAY_MS = 200;
-const CATALOG = [
-    {
-        title: 'Avengers: Doomsday',
-        description: "Les Avengers se reforment face au Docteur Fatalis, une menace capable de briser le multivers. Le destin de tous les univers se joue dans une bataille sans précédent.",
-        duration: 170,
-        genre: 'Action, Aventure, Science-Fiction',
-        actors: 'Robert Downey Jr., Chris Hemsworth, Anthony Mackie',
-        posterSeed: 'avengers-doomsday',
-    },
-    {
-        title: 'Dune : Troisieme partie',
-        description: "Paul Atreides, devenu Empereur, voit son jihad embraser l'univers connu. Entre visions et trahisons, il devra affronter le prix de son destin.",
-        duration: 165,
-        genre: 'Science-Fiction, Aventure',
-        actors: 'Timothee Chalamet, Zendaya, Florence Pugh',
-        posterSeed: 'dune-partie-3',
-    },
-    {
-        title: 'Shrek 5',
-        description: "Shrek et Fiona voient leur marécage bousculé par une nouvelle génération d'ogres. Une aventure familiale pleine d'humour les attend au-delà des marais.",
-        duration: 100,
-        genre: 'Animation, Comedie, Famille',
-        actors: 'Mike Myers, Eddie Murphy, Cameron Diaz',
-        posterSeed: 'shrek-5',
-    },
-    {
-        title: 'Toy Story 5',
-        description: "Woody et Buzz affrontent l'arrivée des jouets connectés. Pour rester les favoris de Bonnie, les jouets devront se réinventer.",
-        duration: 105,
-        genre: 'Animation, Famille, Comedie',
-        actors: 'Tom Hanks, Tim Allen, Joan Cusack',
-        posterSeed: 'toy-story-5',
-    },
-    {
-        title: 'Spider-Man: Brand New Day',
-        description: "Oublié du monde entier, Peter Parker reprend du service à New York. Un nouveau départ qui le confronte à des ennemis inédits.",
-        duration: 145,
-        genre: 'Action, Aventure',
-        actors: 'Tom Holland, Zendaya, Jacob Batalon',
-        posterSeed: 'spiderman-brand-new-day',
-    },
-    {
-        title: 'The Mandalorian & Grogu',
-        description: "Din Djarin et Grogu parcourent la galaxie pour une mission cruciale de la Nouvelle République. Le lien entre le Mandalorien et son apprenti sera mis à l'épreuve.",
-        duration: 130,
-        genre: 'Science-Fiction, Aventure',
-        actors: 'Pedro Pascal, Sigourney Weaver',
-        posterSeed: 'mandalorian-grogu',
-    },
-    {
-        title: "L'Odyssee",
-        description: "Après la guerre de Troie, Ulysse entame un périlleux voyage de retour vers Ithaque. Dieux, monstres et tentations jalonneront sa route.",
-        duration: 160,
-        genre: 'Aventure, Drame, Histoire',
-        actors: 'Matt Damon, Tom Holland, Anne Hathaway',
-        posterSeed: 'odyssee-nolan',
-    },
-    {
-        title: 'Super Mario Galaxy : Le Film',
-        description: "Mario et Luigi s'envolent vers les galaxies pour sauver la princesse Peach. Une odyssée cosmique pleine de étoiles et de passages secrets.",
-        duration: 95,
-        genre: 'Animation, Famille, Aventure',
-        actors: 'Chris Pratt, Anya Taylor-Joy, Jack Black',
-        posterSeed: 'mario-galaxy-film',
-    },
-    {
-        title: 'Hunger Games : Lever de soleil sur la moisson',
-        description: "Cinquante ans avant Katniss, le jeune Haymitch est jeté dans l'arène des 50es Hunger Games. Un récit d'origine brutal et émouvant.",
-        duration: 150,
-        genre: 'Action, Drame, Science-Fiction',
-        actors: 'Joseph Zada, Whitney Peak, Jesse Plemons',
-        posterSeed: 'hunger-games-moisson',
-    },
-    {
-        title: 'Scream 7',
-        description: "Ghostface frappe à nouveau et Sidney Prescott doit sortir de sa retraite. Le tueur masqué n'a jamais été aussi proche.",
-        duration: 115,
-        genre: 'Horreur, Thriller',
-        actors: 'Neve Campbell, Courteney Cox, Mason Gooding',
-        posterSeed: 'scream-7',
-    },
-    {
-        title: 'Godzilla x Kong : Supernova',
-        description: "Godzilla et Kong unissent leurs forces contre une menace cosmique qui s'abat sur la Terre. Le sort des Titans et des humains est en jeu.",
-        duration: 135,
-        genre: 'Action, Science-Fiction',
-        actors: 'Dan Stevens, Rebecca Hall, Brian Tyree Henry',
-        posterSeed: 'godzilla-kong-supernova',
-    },
-    {
-        title: 'Star Wars: Starfighter',
-        description: "Cinq ans après l'ascension de Skywalker, un jeune pilote se lance dans une mission désespérée aux confins de la galaxie.",
-        duration: 140,
-        genre: 'Science-Fiction, Aventure',
-        actors: 'Ryan Gosling, Mia Goth, Matt Smith',
-        posterSeed: 'star-wars-starfighter',
-    },
-    {
-        title: "L'Age de glace 6",
-        description: "Manny, Diego et Sid repartent pour une expédition glaciale. Scrat poursuit toujours son gland à travers les catastrophes.",
-        duration: 100,
-        genre: 'Animation, Comedie, Famille',
-        actors: 'Ray Romano, John Leguizamo, Denis Leary',
-        posterSeed: 'age-de-glace-6',
-    },
-    {
-        title: 'Jumanji 4',
-        description: "Le jeu maudit aspire une nouvelle fois ses joueurs dans la jungle. Les avatars devront survivre à un niveau plus dangereux que jamais.",
-        duration: 125,
-        genre: 'Aventure, Comedie',
-        actors: 'Dwayne Johnson, Kevin Hart, Karen Gillan',
-        posterSeed: 'jumanji-4',
-    },
-    {
-        title: 'Le Diable shabille en Prada 2',
-        description: "Miranda Priestly affronte un empire de la mode en pleine mutation. Andy Sachs revient dans un monde du luxe bouleversé par le numérique.",
-        duration: 110,
-        genre: 'Comedie, Drame',
-        actors: 'Meryl Streep, Anne Hathaway, Emily Blunt',
-        posterSeed: 'diable-prada-2',
-    },
-    {
-        title: 'Narnia : Le Neveu du magicien',
-        description: "Avant l'armoire magique, deux enfants découvrent la naissance du monde de Narnia. La légende des origines enfin portée à l'écran.",
-        duration: 150,
-        genre: 'Fantastique, Aventure, Famille',
-        actors: 'Daniel Craig, Carey Mulligan',
-        posterSeed: 'narnia-neveu-magicien',
-    },
-];
 function parseArgs(argv) {
     const args = argv.slice(2);
     const options = {
@@ -199,7 +66,6 @@ function parseArgs(argv) {
         force: false,
         sessionsOnly: false,
         dryRun: false,
-        tmdb: false,
         dbPath: './database.db',
         todayOverride: '',
     };
@@ -215,9 +81,6 @@ function parseArgs(argv) {
         }
         else if (arg === '--dry-run') {
             options.dryRun = true;
-        }
-        else if (arg === '--tmdb') {
-            options.tmdb = true;
         }
         else if (arg.startsWith('--db=')) {
             options.dbPath = arg.slice('--db='.length);
@@ -259,19 +122,13 @@ function minutesToTime(totalMinutes) {
     const minutes = String(totalMinutes % 60).padStart(2, '0');
     return `${hours}:${minutes}`;
 }
-function buildPosterUrl(posterSeed, wide) {
-    if (wide) {
-        return `https://picsum.photos/seed/cinema-${posterSeed}-wide/800/450`;
-    }
-    return `https://picsum.photos/seed/cinema-${posterSeed}/400/600`;
-}
 function getTmdbApiKey() {
     var _a;
-    const apiKey = (_a = process.env.TMDB_API_KEY) !== null && _a !== void 0 ? _a : '';
-    return apiKey.trim();
-}
-function isTmdbConfigured() {
-    return getTmdbApiKey().length > 0;
+    const apiKey = ((_a = process.env.TMDB_API_KEY) !== null && _a !== void 0 ? _a : '').trim();
+    if (apiKey === '') {
+        throw new Error('TMDB_API_KEY manquant. Ajoutez votre clé TMDB dans le fichier .env.');
+    }
+    return apiKey;
 }
 function getTmdbRegion() {
     var _a;
@@ -301,11 +158,8 @@ function shouldAddMovies(today, options) {
     if (options.sessionsOnly) {
         return false;
     }
-    if (options.force || options.tmdb) {
+    if (options.force) {
         return true;
-    }
-    if (options.auto && isTmdbConfigured()) {
-        return false;
     }
     return isWednesdayDate(today);
 }
@@ -317,9 +171,6 @@ function delayMs(milliseconds) {
 function tmdbGet(apiPath) {
     return __awaiter(this, void 0, void 0, function* () {
         const apiKey = getTmdbApiKey();
-        if (apiKey === '') {
-            throw new Error('TMDB_API_KEY manquant. Ajoutez votre clé TMDB dans le fichier .env.');
-        }
         const separator = apiPath.includes('?') ? '&' : '?';
         const url = `${TMDB_API_BASE}${apiPath}${separator}api_key=${encodeURIComponent(apiKey)}`;
         const response = yield fetch(url);
@@ -462,7 +313,6 @@ function buildRealEntry(item, dbPath, dryRun) {
                 duration,
                 genre: genres,
                 actors,
-                posterSeed: `tmdb-${item.id}`,
             },
             releaseDate: item.release_date,
             tmdbId: item.id,
@@ -554,18 +404,6 @@ function getExistingTitles(db) {
         return titles;
     });
 }
-function pickNewCatalogMovies(existingTitles, count) {
-    const picked = [];
-    for (const candidate of CATALOG) {
-        if (picked.length >= count) {
-            break;
-        }
-        if (!existingTitles.has(candidate.title.trim().toLowerCase())) {
-            picked.push(candidate);
-        }
-    }
-    return picked;
-}
 function getAllMovies(db) {
     return __awaiter(this, void 0, void 0, function* () {
         const movies = yield db.all('SELECT * FROM movies');
@@ -585,21 +423,6 @@ function buildVirtualMovie(entry, index) {
         image: entry.image,
         wide_image: entry.wideImage,
     };
-}
-function catalogEntriesForWeek(picked, today) {
-    const farRelease = addDaysToDateString(today, FUTURE_RELEASE_OFFSET_DAYS);
-    const entries = [];
-    for (let index = 0; index < picked.length; index++) {
-        const movie = picked[index];
-        entries.push({
-            movie,
-            releaseDate: index === 0 ? today : farRelease,
-            tmdbId: null,
-            image: buildPosterUrl(movie.posterSeed, false),
-            wideImage: buildPosterUrl(movie.posterSeed, true),
-        });
-    }
-    return entries;
 }
 function insertMovieEntries(db, entries, dryRun, summary) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -622,19 +445,15 @@ function insertMovieEntries(db, entries, dryRun, summary) {
             summary.addedTitles.push(`${entry.movie.title} (${entry.releaseDate})`);
         }
         if (entries.length === 0) {
-            console.log('Aucun nouveau film à ajouter (catalogue épuisé ou déjà en base).');
+            console.log('Aucun nouveau film TMDB à ajouter (déjà en base).');
         }
     });
 }
-function resolveWeeklyEntries(db, today, weekEnd, dbPath, dryRun, useTmdb) {
+function resolveWeeklyEntries(db, weekEnd, dbPath, dryRun) {
     return __awaiter(this, void 0, void 0, function* () {
         const existingTitles = yield getExistingTitles(db);
-        if (useTmdb) {
-            const existingTmdbIds = yield getExistingTmdbIds(db);
-            return fetchRealMovieEntries(weekEnd, dbPath, dryRun, existingTitles, existingTmdbIds);
-        }
-        const picked = pickNewCatalogMovies(existingTitles, NEW_MOVIES_PER_WEEK);
-        return catalogEntriesForWeek(picked, today);
+        const existingTmdbIds = yield getExistingTmdbIds(db);
+        return fetchRealMovieEntries(weekEnd, dbPath, dryRun, existingTitles, existingTmdbIds);
     });
 }
 function appendVirtualMovies(movies, entries) {
@@ -746,11 +565,9 @@ function runWeeklySchedule() {
             const weeklyDropDue = shouldAddMovies(today, options);
             let dropEntries = [];
             if (weeklyDropDue) {
-                dropEntries = yield resolveWeeklyEntries(db, today, weekEnd, options.dbPath, options.dryRun, options.tmdb);
+                dropEntries = yield resolveWeeklyEntries(db, weekEnd, options.dbPath, options.dryRun);
                 yield insertMovieEntries(db, dropEntries, options.dryRun, summary);
-                if (options.tmdb) {
-                    console.log(`Synchronisation TMDB : ${dropEntries.length} film(s) réel(s) ajouté(s).`);
-                }
+                console.log(`Synchronisation TMDB : ${dropEntries.length} film(s) ajouté(s).`);
             }
             else {
                 console.log('Ajout de films ignoré (hors mercredi ou mode séances uniquement).');
@@ -762,8 +579,7 @@ function runWeeklySchedule() {
             let eligible = selectEligibleMovies(movies, weekEnd, cutoff);
             if (eligible.length === 0 && movies.length > 0 && !options.sessionsOnly) {
                 console.log('Aucun film récent : ajout de rattrapage pour éviter un site vide.');
-                const healWithTmdb = !options.force && isTmdbConfigured();
-                const entries = yield resolveWeeklyEntries(db, today, weekEnd, options.dbPath, options.dryRun, healWithTmdb);
+                const entries = yield resolveWeeklyEntries(db, weekEnd, options.dbPath, options.dryRun);
                 yield insertMovieEntries(db, entries, options.dryRun, summary);
                 if (options.dryRun) {
                     appendVirtualMovies(movies, entries);

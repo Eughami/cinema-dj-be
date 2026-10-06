@@ -674,6 +674,50 @@ app.get(
   }
 );
 
+app.get(
+  '/admin/movies/:id/sessions',
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const movieId = parsePositiveId(req.params.id);
+      if (!movieId) {
+        res.status(400).json({ error: 'Identifiant de film invalide' });
+        return;
+      }
+
+      const db = await openDb();
+      const sessions = await db.all<
+        {
+          id: number;
+          movie_id: number;
+          audio: string;
+          subtitle: string | null;
+          hall_no: number;
+          date: string;
+          time: string;
+          reservations_count: number;
+          people_count: number;
+        }[]
+      >(
+        `SELECT
+           s.*,
+           COUNT(DISTINCT b.id) AS reservations_count,
+           COUNT(bs.id) AS people_count
+         FROM sessions s
+         LEFT JOIN bookings b ON b.session_id = s.id
+         LEFT JOIN booking_seats bs ON bs.booking_id = b.id
+         WHERE s.movie_id = ?
+         GROUP BY s.id
+         ORDER BY s.date ASC, s.time ASC, s.id ASC`,
+        [movieId]
+      );
+
+      res.json(sessions);
+    } catch (error: unknown) {
+      await handleDbError(res, error, 'Échec de la récupération des séances');
+    }
+  }
+);
+
 app.post('/book', async (req: Request, res: Response): Promise<void> => {
   let db: SqliteDb | null = null;
   let transactionActive = false;

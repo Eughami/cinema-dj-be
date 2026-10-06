@@ -32,19 +32,19 @@ TMDB_MAX_NOW_PLAYING=8   # real "now playing" movies added per run
 TMDB_MAX_UPCOMING=8      # future premieres (no sessions yet) per run
 ```
 
-Without a key, everything still works in **catalog fallback mode**
-(built-in titles, placeholder posters).
+The key is mandatory. Without `TMDB_API_KEY` the sync aborts with
+`TMDB_API_KEY manquant` — there is no offline fallback.
 
 ## 3. Run it manually first
 
 ```bash
 # Dry run — talks to TMDB, downloads nothing, writes nothing:
-npm run schedule:real-dry
+npm run schedule:dry
 
 # Real run — adds movies + images + sessions:
 ./sync-cinema-weekly.sh
 # ...or directly:
-npm run schedule:real
+npm run schedule
 ```
 
 Check the result:
@@ -74,10 +74,10 @@ Notes:
 - The script prefers the compiled `weekly-schedule.js` and falls back to
   `ts-node` if it is missing. After pulling new code, run `npm run build`.
 - The API server itself also runs the scheduler at startup + hourly in
-  `--auto` mode: it only gap-fills sessions and adds catalog films on
-  Wednesdays **when no TMDB key is configured**. With a key configured,
-  the cron job owns the weekly movie drops and the server just keeps
-  sessions topped up — so every visit shows current movies.
+  `--auto` mode: it gap-fills sessions and, on Wednesdays, pulls fresh
+  films from TMDB. So the hourly run keeps sessions topped up while the
+  cron job owns the main weekly drop — every visit shows current movies.
+  Without a key the hourly run logs the TMDB error and skips the drop.
 - Re-runs are idempotent: already-imported TMDB titles are skipped
   (via `tmdb_id`), and full days get no duplicate sessions.
 - Session age policy: films released in the last 14 days get a full
@@ -87,11 +87,9 @@ Notes:
 ## 5. Useful commands
 
 ```bash
-npm run schedule:real-dry   # preview a TMDB sync (no writes)
-npm run schedule:real       # TMDB sync now
-npm run schedule            # catalog auto mode (films only on Wednesdays)
-npm run schedule:force      # force a catalog drop (testing)
-npm run schedule:dry        # preview catalog mode (no writes)
+npm run schedule:dry        # preview a sync (no writes)
+npm run schedule            # TMDB sync now (films only on Wednesdays)
+npm run schedule:force      # force the film drop today (testing)
 npx ts-node weekly-schedule.ts --sessions-only   # sessions only, no movies
 DISABLE_WEEKLY_SCHEDULER=1 npm run dev           # dev without the scheduler
 ```

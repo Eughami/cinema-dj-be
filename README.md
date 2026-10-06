@@ -50,7 +50,7 @@ Cron (chaque mercredi à 06h00) en plus du planificateur intégré :
 
 ## Films réels (TMDB) — voir `howtorun.md`
 
-`./sync-cinema-weekly.sh` (ou `npm run schedule:real`) synchronise les vrais
+`./sync-cinema-weekly.sh` (ou `npm run schedule`) synchronise les vrais
 films à l'affiche (TMDB `now_playing` + `upcoming`, France), télécharge les
 affiches dans `uploads/` et programme les séances. Clé gratuite requise :
-`TMDB_API_KEY` dans `.env`. Sans clé, le mode catalogue intégré prend le relais.
+`TMDB_API_KEY` dans `.env`. Sans clé, la synchronisation s'arrête sur erreur.

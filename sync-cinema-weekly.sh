@@ -4,12 +4,10 @@
 #
 # What it does:
 #   1. Loads .env next to this script (TMDB_API_KEY, ...).
-#   2. If TMDB_API_KEY is set: pulls real "now playing" + "upcoming" movies
+#   2. Requires TMDB_API_KEY: pulls real "now playing" + "upcoming" movies
 #      for TMDB_REGION/TMDB_LANGUAGE, downloads posters/backdrops into
 #      uploads/ and schedules a week of non-overlapping sessions.
-#   3. If no key: falls back to the built-in catalog mode (same scheduler,
-#      placeholder posters).
-#   4. Appends timestamped output to the log file.
+#   3. Appends timestamped output to the log file.
 #
 # Recommended cron (every Wednesday at 06:00):
 #   0 6 * * 3 /home/imam/Documents/cinema/cinema-dj-be/sync-cinema-weekly.sh
@@ -34,13 +32,13 @@ log() {
 
 log "=== weekly cinema sync start ==="
 
-if [ -n "${TMDB_API_KEY:-}" ]; then
-  log "mode: TMDB real sync (region=${TMDB_REGION:-FR}, lang=${TMDB_LANGUAGE:-fr-FR})"
-  SYNC_ARGS="--tmdb --auto"
-else
-  log "mode: catalog fallback (TMDB_API_KEY not set)"
-  SYNC_ARGS="--auto"
+if [ -z "${TMDB_API_KEY:-}" ]; then
+  log "ERROR: TMDB_API_KEY is not set - aborting."
+  exit 1
 fi
+
+log "mode: TMDB real sync (region=${TMDB_REGION:-FR}, lang=${TMDB_LANGUAGE:-fr-FR})"
+SYNC_ARGS="--auto"
 
 if [ -f "$APP_DIR/weekly-schedule.js" ]; then
   log "runner: node weekly-schedule.js $SYNC_ARGS"

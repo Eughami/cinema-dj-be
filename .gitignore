@@ -1,4 +1,4 @@
 node_modules
 .env
-.aider*
-*.db
+database.db
+uploads

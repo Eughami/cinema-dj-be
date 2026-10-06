@@ -530,6 +530,30 @@ app.get('/admin/sessions/:id/details', (req, res) => __awaiter(void 0, void 0, v
         yield handleDbError(res, error, 'Échec de la récupération des détails de la séance');
     }
 }));
+app.get('/admin/movies/:id/sessions', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const movieId = parsePositiveId(req.params.id);
+        if (!movieId) {
+            res.status(400).json({ error: 'Identifiant de film invalide' });
+            return;
+        }
+        const db = yield openDb();
+        const sessions = yield db.all(`SELECT
+           s.*,
+           COUNT(DISTINCT b.id) AS reservations_count,
+           COUNT(bs.id) AS people_count
+         FROM sessions s
+         LEFT JOIN bookings b ON b.session_id = s.id
+         LEFT JOIN booking_seats bs ON bs.booking_id = b.id
+         WHERE s.movie_id = ?
+         GROUP BY s.id
+         ORDER BY s.date ASC, s.time ASC, s.id ASC`, [movieId]);
+        res.json(sessions);
+    }
+    catch (error) {
+        yield handleDbError(res, error, 'Échec de la récupération des séances');
+    }
+}));
 app.post('/book', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     let db = null;
     let transactionActive = false;
